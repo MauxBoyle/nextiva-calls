@@ -10,6 +10,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "loguru",
+    "python-dateutil>=2.9",
+    "selenium>=4.35",
 ]
 
 [project.scripts]

@@ -4,7 +4,9 @@ Welcome to the **nextiva-calls** documentation.
 
 ## Overview
 
-nextiva-calls is a Python application.
+nextiva-calls securely reads matching Gmail messages, opens allowlisted Nextiva
+report links in headless Chrome, validates every call row, and updates a CSV
+atomically.
 
 ## Quick Links
 

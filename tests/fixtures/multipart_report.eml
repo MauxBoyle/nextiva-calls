@@ -1,0 +1,17 @@
+From: analytics@nextiva.com
+To: learner@example.test
+Subject: Daily Nextiva Report
+Message-ID: <invented-report-2@example.test>
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="invented-boundary"
+
+--invented-boundary
+Content-Type: text/plain; charset=utf-8
+
+Fallback content.
+--invented-boundary
+Content-Type: text/html; charset=utf-8
+Content-Transfer-Encoding: quoted-printable
+
+<html><body><a class=3D"button" href =3D "https://ct.nextiva.com/report?token=3DINACTIVE_HTML_TOKEN">Open report</a></body></html>
+--invented-boundary--

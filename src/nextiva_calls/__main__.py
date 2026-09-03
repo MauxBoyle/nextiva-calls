@@ -1,3 +1,4 @@
 from nextiva_calls.app import main
 
-main()
+if __name__ == "__main__":
+    raise SystemExit(main())
