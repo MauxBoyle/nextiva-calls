@@ -1,0 +1,157 @@
+from dataclasses import dataclass
+
+import pytest
+from selenium.webdriver.common.by import By
+
+from nextiva_calls.records import CSV_COLUMNS
+from nextiva_calls.report import (
+    ReportError,
+    load_report,
+    normalized_header,
+    parse_report_rows,
+)
+
+
+def test_parse_report_selects_columns_by_normalized_header():
+    headers = [
+        " To ",
+        "NAME",
+        "Answered",
+        "Duration",
+        "From",
+        "Direction",
+        "Time   of Call",
+    ]
+    rows = [
+        [
+            "+1 555 010 0200",
+            "Alex Example",
+            "Yes",
+            "1m 2s",
+            "(555) 010-0100",
+            "Inbound",
+            "January 2, 2026 9:30 AM",
+        ]
+    ]
+    result = parse_report_rows(headers, rows)
+    assert result[0].name == "Alex Example"
+    assert result[0].duration == 62
+    assert result[0].to_number == "+1 555 010 0200"
+    assert normalized_header(" Time\n OF   Call ") == "time of call"
+
+
+@pytest.mark.parametrize(
+    ("headers", "rows"),
+    [
+        (["Name"], [["Alex"]]),
+        (list(CSV_COLUMNS) + ["Name"], []),
+        (list(CSV_COLUMNS), [["short"]]),
+        (list(CSV_COLUMNS), [["Alex", "bad time", "1s", "In", "Yes", "1", "2"]]),
+    ],
+)
+def test_parse_report_rejects_incomplete_or_malformed_tables(headers, rows):
+    with pytest.raises(ReportError):
+        parse_report_rows(headers, rows)
+
+
+@dataclass
+class Element:
+    text: str = ""
+    headings: list | None = None
+    rows: list | None = None
+    cells: list | None = None
+
+    def find_elements(self, by, value):
+        if by == By.TAG_NAME and value == "th":
+            return self.headings or []
+        if by == By.CSS_SELECTOR and value == "tbody tr":
+            return self.rows or []
+        if by == By.TAG_NAME and value == "td":
+            return self.cells or []
+        return []
+
+
+class Driver:
+    def __init__(self, tables):
+        self.tables = tables
+        self.visited = None
+        self.quit_called = False
+
+    def get(self, url):
+        self.visited = url
+
+    def find_elements(self, by, value):
+        return self.tables if (by, value) == (By.TAG_NAME, "table") else []
+
+    def quit(self):
+        self.quit_called = True
+
+
+class ImmediateWait:
+    def __init__(self, driver, timeout):
+        self.driver = driver
+        self.timeout = timeout
+
+    def until(self, condition):
+        result = condition(self.driver)
+        if not result:
+            raise TimeoutError
+        return result
+
+
+def valid_table():
+    headings = [Element(text=value) for value in CSV_COLUMNS]
+    cells = [
+        Element(text=value)
+        for value in [
+            "Alex",
+            "Jan 2 2026 9:30 AM",
+            "2s",
+            "Inbound",
+            "Yes",
+            "555-0100",
+            "555-0200",
+        ]
+    ]
+    return Element(headings=headings, rows=[Element(cells=cells)])
+
+
+def test_load_report_waits_for_matching_table_and_always_quits():
+    wrong = Element(headings=[Element(text="Wrong")])
+    driver = Driver([wrong, valid_table()])
+    result = load_report(
+        "https://ct.nextiva.com/inactive",
+        7,
+        browser_factory=lambda: driver,
+        wait_factory=ImmediateWait,
+    )
+    assert result[0].duration == 2
+    assert driver.visited.endswith("/inactive")
+    assert driver.quit_called is True
+
+
+def test_load_report_wraps_timeout_without_leaking_url_and_quits():
+    driver = Driver([])
+    with pytest.raises(ReportError) as caught:
+        load_report(
+            "https://ct.nextiva.com/report?secret=DO_NOT_LOG",
+            1,
+            browser_factory=lambda: driver,
+            wait_factory=ImmediateWait,
+        )
+    assert "DO_NOT_LOG" not in str(caught.value)
+    assert driver.quit_called is True
+
+
+def test_load_report_wraps_browser_startup_failure():
+    def fail_to_start():
+        raise RuntimeError("token=DO_NOT_LOG")
+
+    with pytest.raises(ReportError) as caught:
+        load_report(
+            "https://ct.nextiva.com/inactive",
+            1,
+            browser_factory=fail_to_start,
+            wait_factory=ImmediateWait,
+        )
+    assert "DO_NOT_LOG" not in str(caught.value)
