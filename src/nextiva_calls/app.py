@@ -1,5 +1,6 @@
 """Command-line entry point for the Nextiva report importer."""
 
+import argparse
 import os
 import sys
 from collections.abc import Mapping
@@ -10,6 +11,7 @@ from loguru import logger
 from nextiva_calls.config import Config, ConfigError
 from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import MailboxError
+from nextiva_calls.segments import AgentLookupError, load_agent_lookup
 from nextiva_calls.storage import StorageError
 
 
@@ -24,10 +26,55 @@ def configure_logging(environ: Mapping[str, str] | None = None) -> None:
         logger.add(Path(log_file), level="DEBUG", rotation="50 KB", retention=1)
 
 
-def main() -> int:
+def _weekly_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="nextiva_calls weekly-report")
+    parser.add_argument("--week-start", metavar="YYYY-MM-DD")
+    parser.add_argument("--output", type=Path, metavar="PATH")
+    return parser
+
+
+def _run_weekly_report(arguments: list[str]) -> int:
+    """Generate a weekly PDF without requiring mailbox credentials."""
+    from nextiva_calls.weekly_metrics import load_candidates, parse_week_start, week_for
+    from nextiva_calls.weekly_report import render_weekly_report
+
+    parsed = _weekly_parser().parse_args(arguments)
+    week = parse_week_start(parsed.week_start) if parsed.week_start else week_for()
+    raw = Path(os.environ.get("NEXTIVA_OUTPUT_FILE", "NextivaCallData.csv"))
+    candidates = Path(
+        os.environ.get("NEXTIVA_CANDIDATE_CALLS_FILE", "")
+        or raw.with_suffix(".candidate-calls.csv")
+    )
+    metadata = Path(
+        os.environ.get("NEXTIVA_METADATA_FILE", "")
+        or raw.with_suffix(".metadata.sqlite3")
+    )
+    lookup_value = os.environ.get("NEXTIVA_AGENT_LOOKUP_FILE", "").strip()
+    if not lookup_value:
+        raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE is required for weekly reports")
+    output = parsed.output or raw.with_name(
+        f"{raw.stem}.weekly-{week.start.isoformat()}.pdf"
+    )
+    lookup = load_agent_lookup(Path(lookup_value))
+    rows = load_candidates(candidates)
+    from nextiva_calls.weekly_metrics import summarize_week
+
+    render_weekly_report(
+        summarize_week(rows, week, lookup, metadata),
+        summarize_week(rows, week.prior, lookup, metadata),
+        output,
+    )
+    logger.info("Wrote weekly report to {}", output)
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return zero on complete success, otherwise one."""
     try:
         configure_logging()
+        command = sys.argv[1:] if argv is None else argv
+        if command and command[0] == "weekly-report":
+            return _run_weekly_report(command[1:])
         config = Config.from_env()
         return 0 if run_import(config) else 1
     except ConfigError as error:
@@ -36,6 +83,11 @@ def main() -> int:
         logger.error("Mailbox connection or authentication failed")
     except StorageError as error:
         logger.error("Local data error: {}", error)
+    except (AgentLookupError, ValueError) as error:
+        logger.error("Weekly report configuration error: {}", error)
+    except SystemExit as error:
+        # argparse has already printed a short, useful usage message.
+        return int(error.code) if isinstance(error.code, int) else 1
     except Exception:
         logger.error("Import failed unexpectedly")
     return 1
