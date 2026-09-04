@@ -61,6 +61,13 @@ cp .env.example .env
   `NEXTIVA_STATE_FILE` is omitted, `NextivaCallData.state.json` is created beside
   that CSV. `NEXTIVA_METADATA_FILE` and `NEXTIVA_ANALYSIS_FILE` similarly default
   to `NextivaCallData.metadata.sqlite3` and `NextivaCallData.analysis.csv`.
+  `NEXTIVA_CANDIDATE_CALLS_FILE` defaults to
+  `NextivaCallData.candidate-calls.csv` beside the raw export.
+- Routing defaults: `NEXTIVA_MEMBERSHIP_HUNT_GROUP=Membership` and
+  `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM=2026-08-15T00:00:00-05:00`. The latter
+  is midnight Central Time on August 15, 2026; it is inclusive and must include
+  a timezone offset. Change these two settings if the Membership routing policy
+  or its effective date changes.
 - `LOG_LEVEL` defaults to `INFO`; `LOG_FILE` defaults to `app.log`.
 
 The application does not load `.env` automatically. Use `uv run --env-file .env` to load the development settings explicitly.
@@ -89,6 +96,23 @@ voicemail destination. Naive timestamps are interpreted in `America/Chicago`,
 and offset-aware timestamps are converted there. Bad timestamps, unusable phone
 values, ambiguous final-four matches, and unfamiliar Answered values remain in
 analysis and are documented in `anomaly_reasons`.
+
+Every analysis rebuild also atomically rebuilds the candidate-call CSV. It groups
+duplicate-free segments by `Name`, Central-time timestamp, and normalized `From`
+number. A row missing any of those values becomes its own `Unknown` candidate so
+no segment is discarded or guessed into another call. Candidate rows keep a
+stable hashed ID and their segment fingerprints for review. They include the
+ordered unique destinations offered (including voicemail `9999`), possible
+non-voicemail answer destinations, maximum duration, routing mode, outcome, and
+any voicemail/answer conflict. `9999` is an offered destination but never an
+agent answer. See the versioned [20-row review template](docs/candidate-call-validation-checklist-v1.csv).
+
+Outcomes are inferred in this order: voicemail plus a non-voicemail positive
+answer is `Ambiguous`; a normal positive answer is `Human answered`; a forwarded
+positive answer only is `Forwarded answered`; voicemail alone is `Voicemail`;
+known negative evidence only is `Unanswered`; otherwise the result is `Unknown`.
+When multiple positive non-voicemail destinations exist, all remain listed as
+possible answers rather than selecting one.
 
 Business hours are Monday through Friday from 9:00 AM (inclusive) to 5:00 PM
 (exclusive), Central Time, excluding 2026 closures: Jan 1, Jan 19, Feb 16, May

@@ -59,6 +59,7 @@ cover/
 # Django stuff:
 *.log
 *.csv
+!docs/candidate-call-validation-checklist-v1.csv
 *.state.json
 local_settings.py
 db.sqlite3

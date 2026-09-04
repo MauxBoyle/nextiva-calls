@@ -6,6 +6,7 @@ import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
@@ -28,7 +29,10 @@ class Config:
     state_file: Path = Path("NextivaCallData.state.json")
     metadata_file: Path | None = None
     analysis_file: Path | None = None
+    candidate_calls_file: Path | None = None
     agent_lookup_file: Path | None = None
+    membership_hunt_group: str = "Membership"
+    membership_simultaneous_from: str = "2026-08-15T00:00:00-05:00"
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -96,6 +100,30 @@ class Config:
             if analysis_value
             else output.with_suffix(".analysis.csv")
         )
+        candidate_value = values.get("NEXTIVA_CANDIDATE_CALLS_FILE", "").strip()
+        candidate_calls = (
+            Path(candidate_value)
+            if candidate_value
+            else output.with_suffix(".candidate-calls.csv")
+        )
+        membership_hunt_group = values.get(
+            "NEXTIVA_MEMBERSHIP_HUNT_GROUP", "Membership"
+        ).strip()
+        if not membership_hunt_group:
+            raise ConfigError("NEXTIVA_MEMBERSHIP_HUNT_GROUP must not be blank")
+        membership_simultaneous_from = values.get(
+            "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM", "2026-08-15T00:00:00-05:00"
+        ).strip()
+        try:
+            routing_start = datetime.fromisoformat(membership_simultaneous_from)
+        except ValueError as error:
+            raise ConfigError(
+                "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM must be an ISO-8601 timestamp"
+            ) from error
+        if routing_start.tzinfo is None:
+            raise ConfigError(
+                "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM must include a timezone offset"
+            )
         lookup = Path(values["NEXTIVA_AGENT_LOOKUP_FILE"].strip())
         if lookup.name == "":
             raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE must name a file")
@@ -104,6 +132,7 @@ class Config:
             "NEXTIVA_STATE_FILE": state,
             "NEXTIVA_METADATA_FILE": metadata,
             "NEXTIVA_ANALYSIS_FILE": analysis,
+            "NEXTIVA_CANDIDATE_CALLS_FILE": candidate_calls,
             "NEXTIVA_AGENT_LOOKUP_FILE": lookup,
         }
         resolved_paths = [path.resolve() for path in named_paths.values()]
@@ -122,5 +151,8 @@ class Config:
             state_file=state,
             metadata_file=metadata,
             analysis_file=analysis,
+            candidate_calls_file=candidate_calls,
             agent_lookup_file=lookup,
+            membership_hunt_group=membership_hunt_group,
+            membership_simultaneous_from=membership_simultaneous_from,
         )

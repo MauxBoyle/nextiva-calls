@@ -21,6 +21,9 @@ def test_config_defaults_and_derived_state_file():
     assert config.state_file == Path("NextivaCallData.state.json")
     assert config.metadata_file == Path("NextivaCallData.metadata.sqlite3")
     assert config.analysis_file == Path("NextivaCallData.analysis.csv")
+    assert config.candidate_calls_file == Path("NextivaCallData.candidate-calls.csv")
+    assert config.membership_hunt_group == "Membership"
+    assert config.membership_simultaneous_from == "2026-08-15T00:00:00-05:00"
     assert config.agent_lookup_file == Path("agent_lookup.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com"})
     assert config.report_timeout_seconds == 30
@@ -36,6 +39,9 @@ def test_config_custom_values():
             "NEXTIVA_STATE_FILE": "state/custom.json",
             "NEXTIVA_METADATA_FILE": "metadata/custom.sqlite3",
             "NEXTIVA_ANALYSIS_FILE": "analysis/custom.csv",
+            "NEXTIVA_CANDIDATE_CALLS_FILE": "candidates/custom.csv",
+            "NEXTIVA_MEMBERSHIP_HUNT_GROUP": "Reception",
+            "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-16T00:00:00-05:00",
             "NEXTIVA_AGENT_LOOKUP_FILE": "lookups/agents.csv",
             "NEXTIVA_ALLOWED_HOSTS": " CT.NEXTIVA.COM, reports.example.test. ",
             "NEXTIVA_REPORT_TIMEOUT_SECONDS": "4.5",
@@ -44,6 +50,8 @@ def test_config_custom_values():
     assert config.state_file == Path("state/custom.json")
     assert config.metadata_file == Path("metadata/custom.sqlite3")
     assert config.analysis_file == Path("analysis/custom.csv")
+    assert config.candidate_calls_file == Path("candidates/custom.csv")
+    assert config.membership_hunt_group == "Reception"
     assert config.agent_lookup_file == Path("lookups/agents.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com", "reports.example.test"})
     assert config.report_timeout_seconds == 4.5
@@ -75,6 +83,12 @@ def test_config_requires_values_without_leaking_password(missing):
             {"NEXTIVA_OUTPUT_FILE": "same.csv", "NEXTIVA_ANALYSIS_FILE": "same.csv"},
             "must differ",
         ),
+        (
+            {"NEXTIVA_OUTPUT_FILE": "same.csv", "NEXTIVA_CANDIDATE_CALLS_FILE": "same.csv"},
+            "must differ",
+        ),
+        ({"NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "tomorrow"}, "ISO-8601"),
+        ({"NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-15T00:00:00"}, "timezone"),
         ({"EMAIL_IMAP_SERVER": "  "}, "must not be blank"),
         ({"NEXTIVA_EMAIL_SENDER": "not-an-address"}, "email address"),
     ],

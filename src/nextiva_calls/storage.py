@@ -11,6 +11,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from nextiva_calls.reconstruction import CANDIDATE_COLUMNS, reconstruct_calls
 from nextiva_calls.records import CSV_COLUMNS, CallRecord, clean_text
 from nextiva_calls.segments import ANALYSIS_COLUMNS, AgentLookup, clean_segment
 
@@ -137,6 +138,51 @@ def save_analysis(path: Path, raw_path: Path, lookup: AgentLookup) -> int:
         if "temporary" in locals():
             temporary.unlink(missing_ok=True)
     return len(unique)
+
+
+def save_candidate_calls(
+    path: Path,
+    analysis_path: Path,
+    *,
+    membership_hunt_group: str = "Membership",
+    membership_simultaneous_from: str = "2026-08-15T00:00:00-05:00",
+) -> int:
+    """Atomically derive candidate calls from the duplicate-free analysis CSV."""
+    try:
+        with analysis_path.open(newline="", encoding="utf-8") as stream:
+            reader = csv.reader(stream)
+            if next(reader, None) != list(ANALYSIS_COLUMNS):
+                raise StorageError("Analysis CSV has an unexpected header")
+            rows = [tuple(row) for row in reader]
+    except StorageError:
+        raise
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise StorageError("Analysis CSV could not be read") from error
+    if any(len(row) != len(ANALYSIS_COLUMNS) for row in rows):
+        raise StorageError("Analysis CSV contains a malformed row")
+    try:
+        candidates = reconstruct_calls(
+            rows,
+            membership_hunt_group=membership_hunt_group,
+            membership_simultaneous_from=membership_simultaneous_from,
+        )
+    except ValueError as error:
+        raise StorageError("Candidate calls could not be reconstructed") from error
+    try:
+        temporary = _temporary_path(path)
+        with temporary.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(CANDIDATE_COLUMNS)
+            writer.writerows(candidates)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except OSError as error:
+        raise StorageError("Candidate calls CSV could not be written") from error
+    finally:
+        if "temporary" in locals():
+            temporary.unlink(missing_ok=True)
+    return len(candidates)
 
 
 def report_fingerprint(

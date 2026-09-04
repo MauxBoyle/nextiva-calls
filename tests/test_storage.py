@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
 from nextiva_calls.records import CSV_COLUMNS, CallRecord
 from nextiva_calls.segments import load_agent_lookup
 from nextiva_calls.storage import (
@@ -13,6 +14,7 @@ from nextiva_calls.storage import (
     load_state,
     report_fingerprint,
     save_analysis,
+    save_candidate_calls,
     save_records,
     save_state,
 )
@@ -118,6 +120,43 @@ def test_analysis_keeps_first_of_historical_raw_duplicates(tmp_path):
     assert len(load_csv(raw)) == 3
     with analysis.open(newline="", encoding="utf-8") as stream:
         assert len(list(csv.reader(stream))) == 3
+
+
+def test_candidate_calls_are_stable_and_created_from_analysis(tmp_path):
+    raw = tmp_path / "calls.csv"
+    analysis = tmp_path / "calls.analysis.csv"
+    candidates = tmp_path / "calls.candidate-calls.csv"
+    append_records(raw, [record(), record("Blair")])
+    lookup_file = tmp_path / "agents.csv"
+    lookup_file.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    save_analysis(analysis, raw, load_agent_lookup(lookup_file))
+    assert save_candidate_calls(candidates, analysis) == 2
+    original = candidates.read_bytes()
+    assert save_candidate_calls(candidates, analysis) == 2
+    assert candidates.read_bytes() == original
+    with candidates.open(newline="", encoding="utf-8") as stream:
+        assert next(csv.reader(stream)) == list(CANDIDATE_COLUMNS)
+
+
+def test_candidate_calls_reject_bad_analysis_and_preserves_existing_file(tmp_path, monkeypatch):
+    analysis = tmp_path / "calls.analysis.csv"
+    candidates = tmp_path / "calls.candidate-calls.csv"
+    analysis.write_text("not,the,right,header\n", encoding="utf-8")
+    with pytest.raises(StorageError, match="header"):
+        save_candidate_calls(candidates, analysis)
+
+    raw = tmp_path / "calls.csv"
+    append_records(raw, [record()])
+    lookup_file = tmp_path / "agents.csv"
+    lookup_file.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    save_analysis(analysis, raw, load_agent_lookup(lookup_file))
+    save_candidate_calls(candidates, analysis)
+    original = candidates.read_bytes()
+    monkeypatch.setattr("nextiva_calls.storage.os.replace", lambda *_: (_ for _ in ()).throw(OSError()))
+    with pytest.raises(StorageError, match="written"):
+        save_candidate_calls(candidates, analysis)
+    assert candidates.read_bytes() == original
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_metadata_associates_duplicate_message_with_original_report(tmp_path):
