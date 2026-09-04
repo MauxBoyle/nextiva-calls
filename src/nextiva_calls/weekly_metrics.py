@@ -72,6 +72,11 @@ class WeeklySummary:
     repeat_callers: dict[str, int]
     hunt_groups: dict[str, dict[str, int]]
     agents: dict[str, dict[str, int]]
+    weekday_hour_volume: dict[tuple[str, int], int]
+    voicemail_unanswered_by_hour: dict[tuple[str, int], int]
+    routing_attempt_distribution: dict[int, int]
+    anomalies: dict[str, int]
+    data_through: datetime | None
 
 
 def week_for(day: date | None = None) -> Week:
@@ -183,6 +188,43 @@ def _period_is_continuous(path: Path, week: Week) -> bool:
     return cursor >= week.end_at
 
 
+def _data_through(path: Path, week: Week) -> datetime | None:
+    """Return the continuous metadata boundary for this week, in Central time.
+
+    Report periods label whole days inclusively, so a midnight end is converted
+    to the following midnight before the coverage intervals are joined.
+    """
+    if not path.exists():
+        return None
+    try:
+        connection = sqlite3.connect(path)
+        rows = connection.execute(
+            "SELECT period_start, period_end FROM reports "
+            "WHERE period_start IS NOT NULL AND period_end IS NOT NULL"
+        ).fetchall()
+        connection.close()
+    except sqlite3.DatabaseError:
+        return None
+    intervals: list[tuple[datetime, datetime]] = []
+    for start, end in rows:
+        left, right = _timestamp(start), _timestamp(end)
+        if left is None or right is None or right < left:
+            continue
+        if right.timetz().replace(tzinfo=None) == time.min:
+            right += timedelta(days=1)
+        left, right = max(left, week.start_at), min(right, week.end_at)
+        if left <= right:
+            intervals.append((left, right))
+    cursor = week.start_at
+    for left, right in sorted(intervals):
+        if left > cursor:
+            break
+        cursor = max(cursor, right)
+        if cursor >= week.end_at:
+            return week.end_at
+    return cursor if cursor > week.start_at else None
+
+
 def summarize_week(
     candidates: list[dict[str, str]],
     week: Week,
@@ -205,6 +247,12 @@ def summarize_week(
     categories = Counter(_category(when) for _, when in selected)
     weekdays = Counter(when.strftime("%a") for _, when in selected)
     hours = Counter(when.hour for _, when in selected)
+    weekday_hours = Counter((when.strftime("%a"), when.hour) for _, when in selected)
+    voicemail_unanswered = Counter(
+        (when.strftime("%a"), when.hour)
+        for row, when in selected
+        if row.get("outcome") in {"Voicemail", "Unanswered"}
+    )
     callers = Counter(
         row.get("from_number_normalized", "")
         for row, _ in selected
@@ -215,6 +263,8 @@ def summarize_week(
     agents: defaultdict[str, Counter[str]] = defaultdict(Counter)
     attempts = 0
     answered_talk = 0
+    attempt_distribution: Counter[int] = Counter()
+    anomalies: Counter[str] = Counter()
     for row, _ in selected:
         group = row.get("hunt_group") or "Unknown"
         outcome = row.get("outcome") or "Unknown"
@@ -226,6 +276,7 @@ def summarize_week(
         ]
         duration = _duration(row)
         attempts += len(offers)
+        attempt_distribution[len(offers)] += 1
         for destination in offers:
             agent = _agent_for(destination, lookup) or OTHER
             agents[agent]["offers"] += 1
@@ -244,7 +295,14 @@ def summarize_week(
             )
             agents[credited]["answers"] += 1
             agents[credited]["talk_seconds"] += duration
+            agents[credited].setdefault("durations", []).append(duration)
             answered_talk += duration
+            if credited == OTHER:
+                anomalies["Unattributed answers"] += 1
+        if outcome == "Ambiguous":
+            anomalies["Ambiguous outcomes"] += 1
+        if outcome == "Unknown":
+            anomalies["Unknown outcomes"] += 1
     duration_stats = DurationStats(
         count=len(durations),
         total_seconds=sum(durations),
@@ -271,5 +329,27 @@ def summarize_week(
         hour_volume={key: hours[key] for key in range(24)},
         repeat_callers={key: value for key, value in callers.items() if value > 1},
         hunt_groups={key: dict(value) for key, value in sorted(groups.items())},
-        agents={key: dict(value) for key, value in sorted(agents.items())},
+        agents={
+            key: {
+                **{field: value for field, value in values.items() if field != "durations"},
+                "median_seconds": int(median(values["durations"])) if values.get("durations") else 0,
+            }
+            for key, values in sorted(agents.items())
+        },
+        weekday_hour_volume={
+            (day, hour): weekday_hours[(day, hour)]
+            for day in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+            for hour in range(24)
+        },
+        voicemail_unanswered_by_hour={
+            (day, hour): voicemail_unanswered[(day, hour)]
+            for day in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+            for hour in range(24)
+        },
+        routing_attempt_distribution=dict(sorted(attempt_distribution.items())),
+        anomalies={
+            key: anomalies[key]
+            for key in ("Ambiguous outcomes", "Unknown outcomes", "Unattributed answers")
+        },
+        data_through=_data_through(metadata_path, week),
     )

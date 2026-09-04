@@ -52,8 +52,8 @@ def _run_weekly_report(arguments: list[str]) -> int:
     lookup_value = os.environ.get("NEXTIVA_AGENT_LOOKUP_FILE", "").strip()
     if not lookup_value:
         raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE is required for weekly reports")
-    output = parsed.output or raw.with_name(
-        f"{raw.stem}.weekly-{week.start.isoformat()}.pdf"
+    output = parsed.output or Path("reports") / (
+        f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
     )
     lookup = load_agent_lookup(Path(lookup_value))
     rows = load_candidates(candidates)

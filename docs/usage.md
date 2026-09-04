@@ -57,20 +57,25 @@ uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 ```
 
 `--week-start` accepts only Monday dates in `YYYY-MM-DD` format. The default
-output is `NextivaCallData.weekly-YYYY-MM-DD.pdf` beside the raw data CSV; pass
-`--output PATH` to write elsewhere.
+output is the printable three-page Letter PDF
+`reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
+elsewhere.
 
-The PDF covers inbound candidate-call outcomes, durations, routing attempts,
-time categories, hunt groups, agent reconciliation, weekday/hour volumes, and
-repeat callers. It contains no outbound, speed-of-answer, wait-time, or
-“agent miss” metrics. Each offered destination is an agent offer. A named agent
-receives answer credit only if exactly one known agent is the sole possible
-answer destination. Untracked destinations or non-unique answers are counted as
-`Other / Unattributed`.
+The PDF includes period, data-through, and generation timestamps; inbound
+outcomes, durations, routing attempts, coverage, hunt groups, and weekday/hour
+views. Its manager-only agent table shows the top five named agents by answers,
+then name, plus `Other / Unattributed`; it states how many further agents were
+omitted. It never displays customer or agent phone numbers or repeat callers.
+It contains no outbound, speed-of-answer, wait-time, or “agent miss” metrics.
+Each offered destination is an agent offer. A named agent receives answer credit
+only if exactly one known agent is the sole possible answer destination.
+Untracked destinations or non-unique answers are counted as `Other / Unattributed`.
 
 The report is visibly **PRELIMINARY** when valid report periods in the metadata
 database do not continuously cover every moment of either selected week. Missing,
 invalid, or gapped metadata therefore keeps the label even if calls are present.
+“Data through” shows the selected week’s latest continuous metadata-confirmed
+coverage boundary in Central Time.
 
 ## Processing behavior
 
