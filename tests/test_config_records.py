@@ -9,6 +9,7 @@ BASE_ENV = {
     "EMAIL_USERNAME": "learner@example.test",
     "EMAIL_APP_PASSWORD": "invented-secret",
     "NEXTIVA_EMAIL_SUBJECT": "Daily Nextiva Report",
+    "NEXTIVA_AGENT_LOOKUP_FILE": "agent_lookup.csv",
 }
 
 
@@ -20,6 +21,7 @@ def test_config_defaults_and_derived_state_file():
     assert config.state_file == Path("NextivaCallData.state.json")
     assert config.metadata_file == Path("NextivaCallData.metadata.sqlite3")
     assert config.analysis_file == Path("NextivaCallData.analysis.csv")
+    assert config.agent_lookup_file == Path("agent_lookup.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com"})
     assert config.report_timeout_seconds == 30
 
@@ -34,6 +36,7 @@ def test_config_custom_values():
             "NEXTIVA_STATE_FILE": "state/custom.json",
             "NEXTIVA_METADATA_FILE": "metadata/custom.sqlite3",
             "NEXTIVA_ANALYSIS_FILE": "analysis/custom.csv",
+            "NEXTIVA_AGENT_LOOKUP_FILE": "lookups/agents.csv",
             "NEXTIVA_ALLOWED_HOSTS": " CT.NEXTIVA.COM, reports.example.test. ",
             "NEXTIVA_REPORT_TIMEOUT_SECONDS": "4.5",
         }
@@ -41,6 +44,7 @@ def test_config_custom_values():
     assert config.state_file == Path("state/custom.json")
     assert config.metadata_file == Path("metadata/custom.sqlite3")
     assert config.analysis_file == Path("analysis/custom.csv")
+    assert config.agent_lookup_file == Path("lookups/agents.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com", "reports.example.test"})
     assert config.report_timeout_seconds == 4.5
 
@@ -116,9 +120,14 @@ def test_call_record_cleans_whitespace_but_preserves_phone_format():
     "cells",
     [
         ["too", "few"],
-        ["Name", "not a date", "1s", "Out", "Yes", "111", "222"],
     ],
 )
 def test_call_record_rejects_bad_rows(cells):
     with pytest.raises(RecordError):
         CallRecord.from_cells(cells)
+
+
+def test_call_record_keeps_malformed_timestamp_for_analysis_cleaning():
+    assert CallRecord.from_cells(
+        ["Name", "not a date", "1s", "Out", "Yes", "111", "222"]
+    ).time_of_call == "not a date"

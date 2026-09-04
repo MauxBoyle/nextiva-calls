@@ -49,8 +49,10 @@ uv run python -m nextiva_calls
 cp .env.example .env
 ```
 
-- Required: `EMAIL_USERNAME`, `EMAIL_APP_PASSWORD`, and
-  `NEXTIVA_EMAIL_SUBJECT` (an exact subject match).
+- Required: `EMAIL_USERNAME`, `EMAIL_APP_PASSWORD`, `NEXTIVA_EMAIL_SUBJECT` (an
+  exact subject match), and `NEXTIVA_AGENT_LOOKUP_FILE`. The lookup is an
+  externally supplied CSV with exactly `phone_number,agent` headers. It must have
+  nonblank values, valid phone formatting, and no number mapped to two agents.
 - Mail defaults: `EMAIL_IMAP_SERVER=imap.gmail.com` and
   `NEXTIVA_EMAIL_SENDER=analytics@nextiva.com`.
 - Security and timing defaults: `NEXTIVA_ALLOWED_HOSTS=ct.nextiva.com` and
@@ -65,15 +67,32 @@ The application does not load `.env` automatically. Use `uv run --env-file .env`
 
 ## Output and repeat runs
 
-The CSV columns are exactly `Name`, `Time of Call`, `Duration`, `Direction`,
+The raw CSV columns are exactly `Name`, `Time of Call`, `Duration`, `Direction`,
 `Answered`, `From`, and `To`. Duration is stored as whole seconds. Displayed call
 times and phone-number formatting are preserved.
 
 Messages are processed oldest-first. A versioned JSON state file records their
 Message-IDs (or stable IMAP UID identifiers when Message-ID is absent). The raw
 CSV is append-only: it retains the first imported copy of each call row. The
-analysis CSV is generated atomically from it and removes repeated normalized rows
-while keeping first-seen order.
+analysis CSV is generated atomically from it and removes repeated whitespace-
+normalized rows while keeping first-seen order. Its columns are the seven raw
+columns followed by `call_timestamp_ct`, `from_number_normalized`,
+`to_number_normalized`, `destination_label`, `is_voicemail_destination`,
+`is_duplicate`, `is_anomaly`, `anomaly_reasons`, `is_business_hours`, and
+`is_holiday`. Boolean values are `True` or `False`; admitted analysis rows always
+have `is_duplicate=False`.
+
+Phone values in analysis are digits-only without shortening either side. A
+destination first matches its complete normalized lookup number, then a uniquely
+mapped final four digits; unmatched destinations are `Other`. `9999` is always a
+voicemail destination. Naive timestamps are interpreted in `America/Chicago`,
+and offset-aware timestamps are converted there. Bad timestamps, unusable phone
+values, ambiguous final-four matches, and unfamiliar Answered values remain in
+analysis and are documented in `anomaly_reasons`.
+
+Business hours are Monday through Friday from 9:00 AM (inclusive) to 5:00 PM
+(exclusive), Central Time, excluding 2026 closures: Jan 1, Jan 19, Feb 16, May
+25, Jun 19, Jul 3, Sep 7, Oct 12, Nov 11, Nov 26–27, and Dec 25.
 
 The metadata SQLite database records report periods, import time, warnings,
 source-message IDs, and the relationship between every report and its call

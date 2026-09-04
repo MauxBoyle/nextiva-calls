@@ -28,6 +28,7 @@ class Config:
     state_file: Path = Path("NextivaCallData.state.json")
     metadata_file: Path | None = None
     analysis_file: Path | None = None
+    agent_lookup_file: Path | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -36,7 +37,12 @@ class Config:
         Only variable names are included in errors; secret values are never shown.
         """
         values = os.environ if environ is None else environ
-        required = ("EMAIL_USERNAME", "EMAIL_APP_PASSWORD", "NEXTIVA_EMAIL_SUBJECT")
+        required = (
+            "EMAIL_USERNAME",
+            "EMAIL_APP_PASSWORD",
+            "NEXTIVA_EMAIL_SUBJECT",
+            "NEXTIVA_AGENT_LOOKUP_FILE",
+        )
         missing = [name for name in required if not values.get(name, "").strip()]
         if missing:
             raise ConfigError(f"Missing required configuration: {', '.join(missing)}")
@@ -90,11 +96,15 @@ class Config:
             if analysis_value
             else output.with_suffix(".analysis.csv")
         )
+        lookup = Path(values["NEXTIVA_AGENT_LOOKUP_FILE"].strip())
+        if lookup.name == "":
+            raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE must name a file")
         named_paths = {
             "NEXTIVA_OUTPUT_FILE": output,
             "NEXTIVA_STATE_FILE": state,
             "NEXTIVA_METADATA_FILE": metadata,
             "NEXTIVA_ANALYSIS_FILE": analysis,
+            "NEXTIVA_AGENT_LOOKUP_FILE": lookup,
         }
         resolved_paths = [path.resolve() for path in named_paths.values()]
         if len(resolved_paths) != len(set(resolved_paths)):
@@ -112,4 +122,5 @@ class Config:
             state_file=state,
             metadata_file=metadata,
             analysis_file=analysis,
+            agent_lookup_file=lookup,
         )

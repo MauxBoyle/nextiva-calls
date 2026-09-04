@@ -19,6 +19,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `EMAIL_USERNAME` | Yes | — | Gmail address |
 | `EMAIL_APP_PASSWORD` | Yes | — | Google app password |
 | `NEXTIVA_EMAIL_SUBJECT` | Yes | — | Exact decoded subject |
+| `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | `phone_number,agent` destination lookup CSV |
 | `EMAIL_IMAP_SERVER` | No | `imap.gmail.com` | IMAP hostname |
 | `NEXTIVA_EMAIL_SENDER` | No | `analytics@nextiva.com` | Exact sender address |
 | `NEXTIVA_ALLOWED_HOSTS` | No | `ct.nextiva.com` | Comma-separated exact HTTPS hosts |
@@ -50,8 +51,9 @@ preferred over plain text, attachments are ignored, and exactly one report link
 must use HTTPS and an exact allowlisted hostname.
 
 Chrome waits for a table with the required normalized headers. Every row must
-have seven cells, a parseable call time, and a duration such as `4s`, `2m 3s`, or
-`1h 2m 3s`. The complete report is validated before storage.
+have seven cells and a duration such as `4s`, `2m 3s`, or `1h 2m 3s`. Malformed
+call timestamps are retained and flagged in the analysis CSV rather than blocking
+the complete report.
 
 The CSV header is exactly:
 
@@ -61,8 +63,22 @@ Name,Time of Call,Duration,Direction,Answered,From,To
 
 `NextivaCallData.csv` is the append-only raw source. A separate analysis CSV is
 rebuilt with an atomic replacement; it preserves first-seen order and omits exact
-duplicate normalized rows already present in raw data. The JSON state file is
-updated only after storage succeeds.
+whitespace-normalized duplicate rows already present in raw data. Its header is
+the seven raw columns plus `call_timestamp_ct`, `from_number_normalized`,
+`to_number_normalized`, `destination_label`, `is_voicemail_destination`,
+`is_duplicate`, `is_anomaly`, `anomaly_reasons`, `is_business_hours`, and
+`is_holiday`. Booleans are written as `True`/`False`.
+
+The lookup CSV is required and must have exactly `phone_number,agent` headers,
+valid nonblank values, and no conflicting full-number mappings. Analysis phone
+numbers are digits-only and never shortened. Destinations match full lookup
+numbers before uniquely mapped final-four extensions; otherwise their label is
+`Other`. `9999` is voicemail regardless of lookup label. Naive timestamps use
+`America/Chicago`; offset-aware timestamps are converted to it. Business hours
+are weekdays from 9:00 AM inclusive through 5:00 PM exclusive CT, excluding the
+2026 closures Jan 1, Jan 19, Feb 16, May 25, Jun 19, Jul 3, Sep 7, Oct 12, Nov
+11, Nov 26–27, and Dec 25. Invalid timestamps and other row anomalies are kept
+and recorded in `anomaly_reasons`.
 
 SQLite metadata records each report fingerprint, source message, Central-time
 labelled period, import time, warnings, and every report-to-call-segment link. A

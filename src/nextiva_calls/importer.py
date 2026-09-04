@@ -20,12 +20,13 @@ from nextiva_calls.email_reports import (
 from nextiva_calls.mailbox import ImapMailbox, RawMessage
 from nextiva_calls.records import CallRecord
 from nextiva_calls.report import ReportError, ReportResult, load_report
+from nextiva_calls.segments import AgentLookupError, load_agent_lookup
 from nextiva_calls.storage import (
     MetadataStore,
+    StorageError,
     append_records,
     load_csv,
     load_state,
-    normalized_row,
     report_fingerprint,
     save_analysis,
     save_records,
@@ -54,6 +55,12 @@ def run_import(
     metadata_store_factory: Callable[[Path], MetadataStore] = MetadataStore,
 ) -> bool:
     """Import all new reports, returning whether every required report succeeded."""
+    # Validate this external dependency before any metadata, raw CSV, or state
+    # file can be created or changed.
+    try:
+        lookup = load_agent_lookup(config.agent_lookup_file)
+    except AgentLookupError as error:
+        raise StorageError("Agent lookup file is invalid") from error
     processed = state_reader(config.state_file)
     metadata_path = config.metadata_file or config.output_file.with_suffix(
         ".metadata.sqlite3"
@@ -123,13 +130,9 @@ def run_import(
                 logger.warning("Report period overlaps an earlier imported report")
             # Validate metadata before touching the raw file.  This prevents a
             # corrupt SQLite file from turning a message into a partial import.
-            known = {normalized_row(row) for row in load_csv(config.output_file)}
-            additions: list[CallRecord] = []
-            for record in result.records:
-                row = normalized_row(record.as_csv_row())
-                if row not in known:
-                    known.add(row)
-                    additions.append(record)
+            # The raw export is an append-only audit trail.  Exact repeats are
+            # deliberately retained here and removed only in the analysis view.
+            additions = result.records
             # csv_writer remains injectable for existing callers and tests. The
             # built-in coordinator uses append-only storage for raw data.
             if csv_writer is save_records:
@@ -144,7 +147,10 @@ def run_import(
                 warnings=tuple(warnings),
                 records=result.records,
             )
-            save_analysis(analysis_path, config.output_file)
+            written = save_analysis(analysis_path, config.output_file, lookup)
+            omitted = len(load_csv(config.output_file)) - written
+            if omitted:
+                logger.info("Analysis omitted {} exact duplicate raw row(s)", omitted)
         for warning in warnings:
             logger.warning("{}", warning)
         processed.add(identifier)

@@ -4,6 +4,7 @@ import json
 import pytest
 
 from nextiva_calls.records import CSV_COLUMNS, CallRecord
+from nextiva_calls.segments import load_agent_lookup
 from nextiva_calls.storage import (
     MetadataStore,
     StorageError,
@@ -111,9 +112,12 @@ def test_analysis_keeps_first_of_historical_raw_duplicates(tmp_path):
     raw = tmp_path / "calls.csv"
     analysis = tmp_path / "calls.analysis.csv"
     append_records(raw, [record(), record(), record("Blair")])
-    assert save_analysis(analysis, raw) == 2
+    lookup_file = tmp_path / "agents.csv"
+    lookup_file.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    assert save_analysis(analysis, raw, load_agent_lookup(lookup_file)) == 2
     assert len(load_csv(raw)) == 3
-    assert len(load_csv(analysis)) == 2
+    with analysis.open(newline="", encoding="utf-8") as stream:
+        assert len(list(csv.reader(stream))) == 3
 
 
 def test_metadata_associates_duplicate_message_with_original_report(tmp_path):
