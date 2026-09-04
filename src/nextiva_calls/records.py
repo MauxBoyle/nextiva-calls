@@ -5,9 +5,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from dateutil.parser import ParserError
-from dateutil.parser import parse as parse_datetime
-
 CSV_COLUMNS = (
     "Name",
     "Time of Call",
@@ -61,12 +58,6 @@ class CallRecord:
         if len(cells) != len(CSV_COLUMNS):
             raise RecordError("A call row must contain exactly seven cells")
         cleaned = [clean_text(cell) for cell in cells]
-        try:
-            parse_datetime(cleaned[1])
-        except (ParserError, OverflowError, ValueError) as error:
-            raise RecordError(
-                "Time of Call is not a recognizable date and time"
-            ) from error
         return cls(
             name=cleaned[0],
             time_of_call=cleaned[1],

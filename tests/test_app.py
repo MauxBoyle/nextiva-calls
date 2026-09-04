@@ -8,6 +8,7 @@ REQUIRED_ENV = {
     "EMAIL_USERNAME": "learner@example.test",
     "EMAIL_APP_PASSWORD": "SUPER_SECRET_VALUE",
     "NEXTIVA_EMAIL_SUBJECT": "Daily Report",
+    "NEXTIVA_AGENT_LOOKUP_FILE": "agent_lookup.csv",
 }
 
 

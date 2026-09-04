@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from nextiva_calls.records import CSV_COLUMNS, CallRecord, clean_text
+from nextiva_calls.segments import ANALYSIS_COLUMNS, AgentLookup, clean_segment
 
 
 class StorageError(RuntimeError):
@@ -111,8 +112,8 @@ def append_records(path: Path, records: list[CallRecord]) -> int:
     return len(records)
 
 
-def save_analysis(path: Path, raw_path: Path) -> int:
-    """Atomically derive a first-seen, exact-row-unique CSV from raw data."""
+def save_analysis(path: Path, raw_path: Path, lookup: AgentLookup) -> int:
+    """Atomically derive enriched, first-seen unique segments from raw data."""
     rows = load_csv(raw_path)
     unique: list[tuple[str, ...]] = []
     known: set[tuple[str, ...]] = set()
@@ -125,8 +126,8 @@ def save_analysis(path: Path, raw_path: Path) -> int:
         temporary = _temporary_path(path)
         with temporary.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.writer(stream)
-            writer.writerow(CSV_COLUMNS)
-            writer.writerows(unique)
+            writer.writerow(ANALYSIS_COLUMNS)
+            writer.writerows(clean_segment(row, lookup) for row in unique)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)

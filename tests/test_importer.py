@@ -1,3 +1,4 @@
+import csv
 from email.message import EmailMessage
 
 import pytest
@@ -11,12 +12,15 @@ from nextiva_calls.storage import StorageError, load_csv, load_state
 
 
 def config(tmp_path):
+    lookup = tmp_path / "agents.csv"
+    lookup.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
     return Config(
         email_username="learner@example.test",
         email_app_password="invented-secret",
         email_subject="Daily Report",
         output_file=tmp_path / "calls.csv",
         state_file=tmp_path / "calls.state.json",
+        agent_lookup_file=lookup,
     )
 
 
@@ -173,3 +177,30 @@ def test_repeated_report_under_a_new_message_keeps_raw_and_analysis_unique(tmp_p
         "message-id:<one@example.test>",
         "message-id:<two@example.test>",
     }
+
+
+def test_invalid_lookup_fails_before_creating_raw_or_metadata_files(tmp_path):
+    settings = config(tmp_path)
+    settings.agent_lookup_file.write_text("wrong,header\n1,Alex\n", encoding="utf-8")
+    with pytest.raises(StorageError, match="lookup"):
+        run_import(
+            settings,
+            mailbox_factory=lambda _: [raw_message()],
+            report_loader=lambda *_: [RECORD],
+        )
+    assert not settings.output_file.exists()
+    assert not (tmp_path / "calls.metadata.sqlite3").exists()
+
+
+def test_raw_duplicates_are_preserved_but_analysis_omits_them(tmp_path):
+    settings = config(tmp_path)
+    result = ReportResult([RECORD, RECORD])
+    assert run_import(
+        settings,
+        mailbox_factory=lambda _: [raw_message()],
+        report_loader=lambda *_: result,
+    )
+    assert len(load_csv(settings.output_file)) == 2
+    analysis = settings.output_file.with_suffix(".analysis.csv")
+    with analysis.open(newline="", encoding="utf-8") as stream:
+        assert len(list(csv.reader(stream))) == 2

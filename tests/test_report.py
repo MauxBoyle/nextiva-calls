@@ -47,12 +47,18 @@ def test_parse_report_selects_columns_by_normalized_header():
         (["Name"], [["Alex"]]),
         (list(CSV_COLUMNS) + ["Name"], []),
         (list(CSV_COLUMNS), [["short"]]),
-        (list(CSV_COLUMNS), [["Alex", "bad time", "1s", "In", "Yes", "1", "2"]]),
     ],
 )
 def test_parse_report_rejects_incomplete_or_malformed_tables(headers, rows):
     with pytest.raises(ReportError):
         parse_report_rows(headers, rows)
+
+
+def test_parse_report_keeps_malformed_timestamp_for_analysis_cleaning():
+    records = parse_report_rows(
+        CSV_COLUMNS, [["Alex", "bad time", "1s", "In", "Yes", "1", "2"]]
+    )
+    assert records[0].time_of_call == "bad time"
 
 
 @dataclass
