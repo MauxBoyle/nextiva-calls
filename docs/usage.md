@@ -46,6 +46,32 @@ It can also run as a module:
 uv run --env-file .env python -m nextiva_calls
 ```
 
+## Weekly manager report
+
+Create a PDF comparing the current Central-time Monday–Sunday week with the
+previous week:
+
+```bash
+uv run --env-file .env nextiva_calls weekly-report
+uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
+```
+
+`--week-start` accepts only Monday dates in `YYYY-MM-DD` format. The default
+output is `NextivaCallData.weekly-YYYY-MM-DD.pdf` beside the raw data CSV; pass
+`--output PATH` to write elsewhere.
+
+The PDF covers inbound candidate-call outcomes, durations, routing attempts,
+time categories, hunt groups, agent reconciliation, weekday/hour volumes, and
+repeat callers. It contains no outbound, speed-of-answer, wait-time, or
+“agent miss” metrics. Each offered destination is an agent offer. A named agent
+receives answer credit only if exactly one known agent is the sole possible
+answer destination. Untracked destinations or non-unique answers are counted as
+`Other / Unattributed`.
+
+The report is visibly **PRELIMINARY** when valid report periods in the metadata
+database do not continuously cover every moment of either selected week. Missing,
+invalid, or gapped metadata therefore keeps the label even if calls are present.
+
 ## Processing behavior
 
 The importer searches without marking email as read, then checks sender and

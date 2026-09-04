@@ -41,6 +41,17 @@ You can also run it as a Python module:
 uv run python -m nextiva_calls
 ```
 
+Create a management-shareable weekly PDF (Monday through Sunday, Central Time):
+
+```bash
+uv run --env-file .env nextiva_calls weekly-report
+uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
+```
+
+`--week-start` must be a Monday. By default, the PDF is written beside the raw
+CSV as `NextivaCallData.weekly-YYYY-MM-DD.pdf`; use `--output PATH` to choose a
+different location.
+
 ## Environment Variables
 
 `.env.example` is the environment template. Copy it to `.env` for development:
@@ -128,6 +139,24 @@ call rows.
 The command returns exit status `0` when all required reports succeed. It returns
 `1` for unsafe/missing configuration, authentication, browser, parsing, CSV, or
 state errors. One bad report does not prevent later messages from being tried.
+
+## Weekly manager PDF
+
+`weekly-report` compares the selected Central-time Monday–Sunday week with the
+prior week. It reports reconstructed inbound-call outcomes, duration, routing
+attempts, time categories, hunt groups, agent offers/answers, weekday/hour
+volume, and repeat callers. It deliberately does not make outbound, speed-of-
+answer, wait-time, or “agent miss” claims.
+
+The agent lookup used when generating the report is authoritative at report time.
+Every offered destination is counted as an offer. An answer is credited to a
+named agent only when exactly one known agent is the sole possible answer
+destination. Untracked destinations and non-unique possible answers appear as
+`Other / Unattributed`, so reconciliation does not silently discard them.
+
+A week is marked **PRELIMINARY** unless valid report-period metadata in
+`NEXTIVA_METADATA_FILE` continuously covers the entire week. Missing, invalid,
+or gapped metadata keeps the label visible even when candidate calls exist.
 
 ## Troubleshooting
 
