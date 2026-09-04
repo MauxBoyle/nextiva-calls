@@ -8,6 +8,7 @@ from nextiva_calls.report import (
     ReportError,
     load_report,
     normalized_header,
+    parse_report_period,
     parse_report_rows,
 )
 
@@ -155,3 +156,35 @@ def test_load_report_wraps_browser_startup_failure():
             wait_factory=ImmediateWait,
         )
     assert "DO_NOT_LOG" not in str(caught.value)
+
+
+@pytest.mark.parametrize("label", ["Date Range", "Report Period"])
+def test_parse_labelled_period_uses_central_time(label):
+    start, end, warnings = parse_report_period(
+        f"Summary\n{label}: Jan 2, 2026 - Jan 3, 2026\nCalls"
+    )
+    assert start.isoformat() == "2026-01-02T00:00:00-06:00"
+    assert end.isoformat() == "2026-01-03T00:00:00-06:00"
+    assert warnings == ()
+
+
+def test_parse_period_allows_a_value_on_the_next_rendered_line():
+    start, end, warnings = parse_report_period(
+        "Date Range\nJan 2, 2026 through Jan 3, 2026"
+    )
+    assert start.date().isoformat() == "2026-01-02"
+    assert end.date().isoformat() == "2026-01-03"
+    assert warnings == ()
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Summary", "not found"),
+        ("Date Range: someday", "malformed"),
+        ("Report Period: Jan 3, 2026 - Jan 2, 2026", "ends before"),
+    ],
+)
+def test_bad_periods_are_warnings_not_report_errors(text, expected):
+    _, _, warnings = parse_report_period(text)
+    assert expected in warnings[0]

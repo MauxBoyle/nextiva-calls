@@ -25,6 +25,8 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `NEXTIVA_REPORT_TIMEOUT_SECONDS` | No | `30` | Dynamic-table wait timeout |
 | `NEXTIVA_OUTPUT_FILE` | No | `NextivaCallData.csv` | Destination CSV |
 | `NEXTIVA_STATE_FILE` | No | derived beside CSV | Processed-message JSON |
+| `NEXTIVA_METADATA_FILE` | No | derived beside CSV | SQLite report provenance |
+| `NEXTIVA_ANALYSIS_FILE` | No | derived beside CSV | Duplicate-free analysis CSV |
 | `LOG_LEVEL` | No | `INFO` | Console log level |
 | `LOG_FILE` | No | `app.log` | Debug log location; blank disables it |
 
@@ -57,10 +59,18 @@ The CSV header is exactly:
 Name,Time of Call,Duration,Direction,Answered,From,To
 ```
 
-Writes use a temporary file in the destination directory and an atomic replace,
-so a failed write does not leave a partial report. The state file uses the same
-method and is updated only after the CSV operation succeeds. Exact duplicate rows
-are skipped on repeat runs.
+`NextivaCallData.csv` is the append-only raw source. A separate analysis CSV is
+rebuilt with an atomic replacement; it preserves first-seen order and omits exact
+duplicate normalized rows already present in raw data. The JSON state file is
+updated only after storage succeeds.
+
+SQLite metadata records each report fingerprint, source message, Central-time
+labelled period, import time, warnings, and every report-to-call-segment link. A
+repeat report sent in a different email is associated with its original report but
+does not add rows. Missing or malformed labelled periods, reversed periods, and
+overlap with an earlier period log warnings while retaining valid calls. Back up
+the metadata database along with the raw CSV; if it is corrupt, restore it before
+retrying rather than deleting the audit trail.
 
 Exit status `0` means all required reports succeeded. Exit status `1` means at
 least one report failed or a fatal configuration, mailbox, CSV, or state error

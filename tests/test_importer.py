@@ -6,8 +6,8 @@ from nextiva_calls.config import Config
 from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import RawMessage
 from nextiva_calls.records import CallRecord
-from nextiva_calls.report import ReportError
-from nextiva_calls.storage import StorageError
+from nextiva_calls.report import ReportError, ReportResult
+from nextiva_calls.storage import StorageError, load_csv, load_state
 
 
 def config(tmp_path):
@@ -149,3 +149,27 @@ def test_csv_and_state_failures_stop_immediately(tmp_path):
             **common,
         )
     assert events == ["csv"]
+
+
+def test_repeated_report_under_a_new_message_keeps_raw_and_analysis_unique(tmp_path):
+    settings = config(tmp_path)
+    result = ReportResult([RECORD], warnings=("Report period was not found",))
+    assert run_import(
+        settings,
+        mailbox_factory=lambda _: [raw_message(uid="1", message_id="one")],
+        report_loader=lambda *_: result,
+    )
+    raw_before = (tmp_path / "calls.csv").read_bytes()
+    analysis_before = (tmp_path / "calls.analysis.csv").read_bytes()
+    assert run_import(
+        settings,
+        mailbox_factory=lambda _: [raw_message(uid="2", message_id="two")],
+        report_loader=lambda *_: result,
+    )
+    assert (tmp_path / "calls.csv").read_bytes() == raw_before
+    assert (tmp_path / "calls.analysis.csv").read_bytes() == analysis_before
+    assert len(load_csv(tmp_path / "calls.csv")) == 1
+    assert load_state(tmp_path / "calls.state.json") == {
+        "message-id:<one@example.test>",
+        "message-id:<two@example.test>",
+    }

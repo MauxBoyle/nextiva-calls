@@ -57,7 +57,8 @@ cp .env.example .env
   `NEXTIVA_REPORT_TIMEOUT_SECONDS=30`. Multiple allowed hosts are comma-separated.
 - Output defaults: `NEXTIVA_OUTPUT_FILE=NextivaCallData.csv`. If
   `NEXTIVA_STATE_FILE` is omitted, `NextivaCallData.state.json` is created beside
-  that CSV.
+  that CSV. `NEXTIVA_METADATA_FILE` and `NEXTIVA_ANALYSIS_FILE` similarly default
+  to `NextivaCallData.metadata.sqlite3` and `NextivaCallData.analysis.csv`.
 - `LOG_LEVEL` defaults to `INFO`; `LOG_FILE` defaults to `app.log`.
 
 The application does not load `.env` automatically. Use `uv run --env-file .env` to load the development settings explicitly.
@@ -69,9 +70,17 @@ The CSV columns are exactly `Name`, `Time of Call`, `Duration`, `Direction`,
 times and phone-number formatting are preserved.
 
 Messages are processed oldest-first. A versioned JSON state file records their
-Message-IDs (or stable IMAP UID identifiers when Message-ID is absent). Exact
-duplicate CSV rows are also skipped, which makes a retry safe if state saving
-failed after the CSV was written.
+Message-IDs (or stable IMAP UID identifiers when Message-ID is absent). The raw
+CSV is append-only: it retains the first imported copy of each call row. The
+analysis CSV is generated atomically from it and removes repeated normalized rows
+while keeping first-seen order.
+
+The metadata SQLite database records report periods, import time, warnings,
+source-message IDs, and the relationship between every report and its call
+segments. A repeated report delivered under another message ID is recorded as an
+additional source but adds no raw or analysis rows. Missing, malformed, reversed,
+or overlapping labelled report periods produce a warning without discarding valid
+call rows.
 
 The command returns exit status `0` when all required reports succeed. It returns
 `1` for unsafe/missing configuration, authentication, browser, parsing, CSV, or
@@ -86,8 +95,12 @@ state errors. One bad report does not prevent later messages from being tried.
 - **Unexpected CSV header:** move or rename the existing CSV only after reviewing
   it. The importer refuses to overwrite files with a different schema.
 - **Corrupt state file:** inspect or restore it rather than deleting it blindly.
-  Row duplicate detection protects a retry, but state controls which emails are
-  fetched again.
+  The metadata database and raw CSV protect report and row retries, but state
+  controls which emails are fetched again.
+- **Metadata database problem:** restore `NextivaCallData.metadata.sqlite3` from a
+  backup if possible. Do not delete it casually: it is the report-to-call audit
+  trail. If it must be rebuilt, keep the raw CSV and re-import only after reviewing
+  the resulting provenance and analysis CSV.
 
 ## Testing
 
