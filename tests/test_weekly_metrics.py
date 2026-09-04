@@ -67,8 +67,12 @@ def test_summary_counts_outcomes_time_categories_and_agent_reconciliation(tmp_pa
         "Holiday": 0,
     }
     assert summary.repeat_callers == {"15550001": 4}
-    assert summary.agents["Alex"] == {"offers": 2, "answers": 1, "talk_seconds": 75}
-    assert summary.agents[OTHER] == {"offers": 2, "answers": 2, "talk_seconds": 150}
+    assert summary.agents["Alex"] == {"offers": 2, "answers": 1, "talk_seconds": 75, "median_seconds": 75}
+    assert summary.agents[OTHER] == {"offers": 2, "answers": 2, "talk_seconds": 150, "median_seconds": 75}
+    assert summary.weekday_hour_volume[("Mon", 10)] == 1
+    assert summary.voicemail_unanswered_by_hour[("Mon", 20)] == 1
+    assert summary.routing_attempt_distribution == {1: 2, 2: 2}
+    assert summary.anomalies == {"Ambiguous outcomes": 0, "Unknown outcomes": 0, "Unattributed answers": 2}
     assert "misses" not in str(summary.agents).lower()
 
 
@@ -102,3 +106,5 @@ def test_complete_inclusive_metadata_period_is_not_preliminary(tmp_path):
     connection.close()
     summary = summarize_week([], Week(date(2026, 8, 17)), lookup(), database)
     assert not summary.preliminary
+    assert summary.data_through is not None
+    assert summary.data_through.isoformat() == "2026-08-24T00:00:00-05:00"

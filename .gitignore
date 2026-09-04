@@ -60,6 +60,7 @@ cover/
 *.log
 *.csv
 !docs/candidate-call-validation-checklist-v1.csv
+reports/
 *.state.json
 local_settings.py
 db.sqlite3

@@ -48,9 +48,9 @@ uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 ```
 
-`--week-start` must be a Monday. By default, the PDF is written beside the raw
-CSV as `NextivaCallData.weekly-YYYY-MM-DD.pdf`; use `--output PATH` to choose a
-different location.
+`--week-start` must be a Monday. By default, the printable three-page Letter PDF
+is written as `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; use `--output PATH`
+to choose a different location.
 
 ## Environment Variables
 
@@ -143,10 +143,12 @@ state errors. One bad report does not prevent later messages from being tried.
 ## Weekly manager PDF
 
 `weekly-report` compares the selected Central-time Monday–Sunday week with the
-prior week. It reports reconstructed inbound-call outcomes, duration, routing
-attempts, time categories, hunt groups, agent offers/answers, weekday/hour
-volume, and repeat callers. It deliberately does not make outbound, speed-of-
-answer, wait-time, or “agent miss” claims.
+prior week. It includes reporting-period, data-through, and generation
+timestamps; daily volume, coverage, routing, hunt-group, and heatmap views; and
+a manager-only agent table. The agent table shows at most five named agents,
+then `Other / Unattributed`; additional named agents are counted but omitted.
+It deliberately does not make outbound, speed-of-answer, wait-time, or “agent
+miss” claims, and it never displays customer or agent phone numbers.
 
 The agent lookup used when generating the report is authoritative at report time.
 Every offered destination is counted as an offer. An answer is credited to a
@@ -157,6 +159,8 @@ destination. Untracked destinations and non-unique possible answers appear as
 A week is marked **PRELIMINARY** unless valid report-period metadata in
 `NEXTIVA_METADATA_FILE` continuously covers the entire week. Missing, invalid,
 or gapped metadata keeps the label visible even when candidate calls exist.
+“Data through” is the latest continuous metadata-confirmed coverage boundary in
+the selected week, shown in Central Time.
 
 ## Troubleshooting
 
