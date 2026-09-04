@@ -26,6 +26,8 @@ class Config:
     allowed_hosts: frozenset[str] = frozenset({"ct.nextiva.com"})
     report_timeout_seconds: float = 30
     state_file: Path = Path("NextivaCallData.state.json")
+    metadata_file: Path | None = None
+    analysis_file: Path | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Config:
@@ -76,8 +78,27 @@ class Config:
             raise ConfigError("NEXTIVA_EMAIL_SENDER must be an email address")
         state_value = values.get("NEXTIVA_STATE_FILE", "").strip()
         state = Path(state_value) if state_value else output.with_suffix(".state.json")
-        if output.resolve() == state.resolve():
-            raise ConfigError("NEXTIVA_STATE_FILE must differ from NEXTIVA_OUTPUT_FILE")
+        metadata_value = values.get("NEXTIVA_METADATA_FILE", "").strip()
+        metadata = (
+            Path(metadata_value)
+            if metadata_value
+            else output.with_suffix(".metadata.sqlite3")
+        )
+        analysis_value = values.get("NEXTIVA_ANALYSIS_FILE", "").strip()
+        analysis = (
+            Path(analysis_value)
+            if analysis_value
+            else output.with_suffix(".analysis.csv")
+        )
+        named_paths = {
+            "NEXTIVA_OUTPUT_FILE": output,
+            "NEXTIVA_STATE_FILE": state,
+            "NEXTIVA_METADATA_FILE": metadata,
+            "NEXTIVA_ANALYSIS_FILE": analysis,
+        }
+        resolved_paths = [path.resolve() for path in named_paths.values()]
+        if len(resolved_paths) != len(set(resolved_paths)):
+            raise ConfigError("Output, state, metadata, and analysis files must differ")
 
         return cls(
             email_username=values["EMAIL_USERNAME"].strip(),
@@ -89,4 +110,6 @@ class Config:
             allowed_hosts=hosts,
             report_timeout_seconds=timeout,
             state_file=state,
+            metadata_file=metadata,
+            analysis_file=analysis,
         )

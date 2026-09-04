@@ -2,14 +2,77 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
+
+from dateutil.parser import ParserError
+from dateutil.parser import parse as parse_datetime
 
 from nextiva_calls.records import CSV_COLUMNS, CallRecord, RecordError, clean_text
 
 
 class ReportError(RuntimeError):
     """Raised when a report cannot be loaded or fully validated."""
+
+
+CENTRAL_TIME = ZoneInfo("America/Chicago")
+
+
+@dataclass(frozen=True)
+class ReportResult:
+    """Validated report contents plus optional provenance information."""
+
+    records: list[CallRecord]
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+    warnings: tuple[str, ...] = ()
+
+    # Small compatibility conveniences for callers that previously received a
+    # list directly from ``load_report``.
+    def __getitem__(self, index: int) -> CallRecord:
+        return self.records[index]
+
+    def __len__(self) -> int:
+        return len(self.records)
+
+
+_PERIOD_LABEL = re.compile(r"(?:date\s*range|report\s*period)\s*[:\-]?\s*", re.I)
+_PERIOD_SEPARATOR = re.compile(r"\s*(?:\bto\b|\bthrough\b|\s+-\s+|\s*[–—]\s*)\s*", re.I)
+
+
+def parse_report_period(
+    page_text: str,
+) -> tuple[datetime | None, datetime | None, tuple[str, ...]]:
+    """Read a labelled date range from page text, using Central time.
+
+    A missing or unfamiliar label is intentionally non-fatal: call rows are still
+    useful, and the warning documents why no period provenance was stored.
+    """
+    label = _PERIOD_LABEL.search(page_text)
+    if label is None:
+        return None, None, ("Report period was not found in a labelled header",)
+    # A rendered page may place the label and value in separate elements, which
+    # Selenium exposes as separate lines of text.
+    value = page_text[label.end() :].strip().splitlines()[0].strip()
+    parts = _PERIOD_SEPARATOR.split(value, maxsplit=1)
+    if len(parts) != 2 or not all(parts):
+        return None, None, ("Report period is malformed",)
+    try:
+        start = parse_datetime(parts[0], fuzzy=False).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME
+        )
+        end = parse_datetime(parts[1], fuzzy=False).replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME
+        )
+    except (ParserError, OverflowError, ValueError):
+        return None, None, ("Report period is malformed",)
+    if end < start:
+        return start, end, ("Report period ends before it starts",)
+    return start, end, ()
 
 
 def normalized_header(value: str) -> str:
@@ -58,8 +121,8 @@ def load_report(
     *,
     browser_factory: Callable[[], Any] = _default_browser,
     wait_factory: Callable[[Any, float], Any] | None = None,
-) -> list[CallRecord]:
-    """Load a dynamic report in headless Chrome and return validated records."""
+) -> ReportResult:
+    """Load a dynamic report in headless Chrome and return validated contents."""
     if wait_factory is None:
         from selenium.webdriver.support.ui import WebDriverWait
 
@@ -89,7 +152,13 @@ def load_report(
             raw_rows.append(
                 [cell.text for cell in row.find_elements(By.TAG_NAME, "td")]
             )
-        return parse_report_rows(headers, raw_rows)
+        # Read the rendered page only after the call table has appeared.
+        try:
+            page_text = driver.find_element(By.TAG_NAME, "body").text
+        except Exception:
+            page_text = ""
+        start, end, warnings = parse_report_period(page_text)
+        return ReportResult(parse_report_rows(headers, raw_rows), start, end, warnings)
     except ReportError:
         raise
     except Exception as error:

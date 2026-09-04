@@ -5,9 +5,13 @@ import pytest
 
 from nextiva_calls.records import CSV_COLUMNS, CallRecord
 from nextiva_calls.storage import (
+    MetadataStore,
     StorageError,
+    append_records,
     load_csv,
     load_state,
+    report_fingerprint,
+    save_analysis,
     save_records,
     save_state,
 )
@@ -101,3 +105,41 @@ def test_atomic_replace_failure_preserves_existing_state(tmp_path, monkeypatch):
     with pytest.raises(StorageError):
         save_state(destination, {"one", "two"})
     assert destination.read_bytes() == original
+
+
+def test_analysis_keeps_first_of_historical_raw_duplicates(tmp_path):
+    raw = tmp_path / "calls.csv"
+    analysis = tmp_path / "calls.analysis.csv"
+    append_records(raw, [record(), record(), record("Blair")])
+    assert save_analysis(analysis, raw) == 2
+    assert len(load_csv(raw)) == 3
+    assert len(load_csv(analysis)) == 2
+
+
+def test_metadata_associates_duplicate_message_with_original_report(tmp_path):
+    store = MetadataStore(tmp_path / "calls.metadata.sqlite3")
+    store.initialize()
+    records = [record()]
+    fingerprint = report_fingerprint(None, None, records)
+    assert store.store_report(
+        message_id="one",
+        fingerprint=fingerprint,
+        period_start=None,
+        period_end=None,
+        warnings=("period unavailable",),
+        records=records,
+    )
+    assert not store.store_report(
+        message_id="two",
+        fingerprint=fingerprint,
+        period_start=None,
+        period_end=None,
+        warnings=(),
+        records=records,
+    )
+    import sqlite3
+
+    connection = sqlite3.connect(tmp_path / "calls.metadata.sqlite3")
+    assert connection.execute("SELECT count(*) FROM source_messages").fetchone()[0] == 2
+    assert connection.execute("SELECT count(*) FROM report_segments").fetchone()[0] == 1
+    connection.close()

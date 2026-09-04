@@ -18,6 +18,8 @@ def test_config_defaults_and_derived_state_file():
     assert config.email_sender == "analytics@nextiva.com"
     assert config.output_file == Path("NextivaCallData.csv")
     assert config.state_file == Path("NextivaCallData.state.json")
+    assert config.metadata_file == Path("NextivaCallData.metadata.sqlite3")
+    assert config.analysis_file == Path("NextivaCallData.analysis.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com"})
     assert config.report_timeout_seconds == 30
 
@@ -30,11 +32,15 @@ def test_config_custom_values():
             "NEXTIVA_EMAIL_SENDER": "reports@example.test",
             "NEXTIVA_OUTPUT_FILE": "output/calls.csv",
             "NEXTIVA_STATE_FILE": "state/custom.json",
+            "NEXTIVA_METADATA_FILE": "metadata/custom.sqlite3",
+            "NEXTIVA_ANALYSIS_FILE": "analysis/custom.csv",
             "NEXTIVA_ALLOWED_HOSTS": " CT.NEXTIVA.COM, reports.example.test. ",
             "NEXTIVA_REPORT_TIMEOUT_SECONDS": "4.5",
         }
     )
     assert config.state_file == Path("state/custom.json")
+    assert config.metadata_file == Path("metadata/custom.sqlite3")
+    assert config.analysis_file == Path("analysis/custom.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com", "reports.example.test"})
     assert config.report_timeout_seconds == 4.5
 
@@ -59,6 +65,10 @@ def test_config_requires_values_without_leaking_password(missing):
         ({"NEXTIVA_OUTPUT_FILE": ""}, "name a file"),
         (
             {"NEXTIVA_OUTPUT_FILE": "same.csv", "NEXTIVA_STATE_FILE": "same.csv"},
+            "must differ",
+        ),
+        (
+            {"NEXTIVA_OUTPUT_FILE": "same.csv", "NEXTIVA_ANALYSIS_FILE": "same.csv"},
             "must differ",
         ),
         ({"EMAIL_IMAP_SERVER": "  "}, "must not be blank"),
