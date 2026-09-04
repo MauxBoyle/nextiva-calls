@@ -28,6 +28,9 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `NEXTIVA_STATE_FILE` | No | derived beside CSV | Processed-message JSON |
 | `NEXTIVA_METADATA_FILE` | No | derived beside CSV | SQLite report provenance |
 | `NEXTIVA_ANALYSIS_FILE` | No | derived beside CSV | Duplicate-free analysis CSV |
+| `NEXTIVA_CANDIDATE_CALLS_FILE` | No | derived beside CSV | Reconstructed candidate-call CSV |
+| `NEXTIVA_MEMBERSHIP_HUNT_GROUP` | No | `Membership` | Hunt group with a routing-policy boundary |
+| `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` | No | `2026-08-15T00:00:00-05:00` | Inclusive Central-time simultaneous-ring start |
 | `LOG_LEVEL` | No | `INFO` | Console log level |
 | `LOG_FILE` | No | `app.log` | Debug log location; blank disables it |
 
@@ -87,6 +90,31 @@ does not add rows. Missing or malformed labelled periods, reversed periods, and
 overlap with an earlier period log warnings while retaining valid calls. Back up
 the metadata database along with the raw CSV; if it is corrupt, restore it before
 retrying rather than deleting the audit trail.
+
+## Candidate-call reconstruction
+
+Whenever the analysis CSV is rebuilt, the importer atomically writes a candidate
+CSV named `NextivaCallData.candidate-calls.csv` by default. It groups segments by
+`Name`, Central timestamp, and normalized `From`. Any missing grouping value
+makes that segment a standalone `Unknown` candidate, which guarantees one and
+only one candidate contains each duplicate-free segment.
+
+Candidate rows contain a hashed ID, segment fingerprints, routing mode, ordered
+unique offered destinations (including `9999` voicemail), possible non-voicemail
+answer destinations, maximum duration, outcome, and conflicts. Voicemail is
+never treated as an agent answer. If voicemail and a non-voicemail positive
+answer appear together, the outcome is `Ambiguous` and the conflict is flagged.
+Multiple plausible agent answers are retained instead of choosing one.
+
+The default assumption is that `Membership` changed from sequential to
+simultaneous ringing at midnight Central Time on August 15, 2026, inclusive.
+Update `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
+`NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` together when that business rule changes;
+the timestamp must be ISO-8601 and include its offset. Other hunt groups remain
+sequential.
+
+Use the [versioned 20-row manual-validation checklist](candidate-call-validation-checklist-v1.csv)
+to compare candidate output with Nextiva evidence.
 
 Exit status `0` means all required reports succeeded. Exit status `1` means at
 least one report failed or a fatal configuration, mailbox, CSV, or state error

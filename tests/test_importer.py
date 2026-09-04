@@ -165,6 +165,7 @@ def test_repeated_report_under_a_new_message_keeps_raw_and_analysis_unique(tmp_p
     )
     raw_before = (tmp_path / "calls.csv").read_bytes()
     analysis_before = (tmp_path / "calls.analysis.csv").read_bytes()
+    candidates_before = (tmp_path / "calls.candidate-calls.csv").read_bytes()
     assert run_import(
         settings,
         mailbox_factory=lambda _: [raw_message(uid="2", message_id="two")],
@@ -172,6 +173,7 @@ def test_repeated_report_under_a_new_message_keeps_raw_and_analysis_unique(tmp_p
     )
     assert (tmp_path / "calls.csv").read_bytes() == raw_before
     assert (tmp_path / "calls.analysis.csv").read_bytes() == analysis_before
+    assert (tmp_path / "calls.candidate-calls.csv").read_bytes() == candidates_before
     assert len(load_csv(tmp_path / "calls.csv")) == 1
     assert load_state(tmp_path / "calls.state.json") == {
         "message-id:<one@example.test>",
@@ -203,4 +205,7 @@ def test_raw_duplicates_are_preserved_but_analysis_omits_them(tmp_path):
     assert len(load_csv(settings.output_file)) == 2
     analysis = settings.output_file.with_suffix(".analysis.csv")
     with analysis.open(newline="", encoding="utf-8") as stream:
+        assert len(list(csv.reader(stream))) == 2
+    candidates = settings.output_file.with_suffix(".candidate-calls.csv")
+    with candidates.open(newline="", encoding="utf-8") as stream:
         assert len(list(csv.reader(stream))) == 2

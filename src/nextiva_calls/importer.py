@@ -29,6 +29,7 @@ from nextiva_calls.storage import (
     load_state,
     report_fingerprint,
     save_analysis,
+    save_candidate_calls,
     save_records,
     save_state,
 )
@@ -67,6 +68,9 @@ def run_import(
     )
     analysis_path = config.analysis_file or config.output_file.with_suffix(
         ".analysis.csv"
+    )
+    candidate_path = config.candidate_calls_file or config.output_file.with_suffix(
+        ".candidate-calls.csv"
     )
     metadata = metadata_store_factory(metadata_path)
     metadata.initialize()
@@ -148,6 +152,12 @@ def run_import(
                 records=result.records,
             )
             written = save_analysis(analysis_path, config.output_file, lookup)
+            save_candidate_calls(
+                candidate_path,
+                analysis_path,
+                membership_hunt_group=config.membership_hunt_group,
+                membership_simultaneous_from=config.membership_simultaneous_from,
+            )
             omitted = len(load_csv(config.output_file)) - written
             if omitted:
                 logger.info("Analysis omitted {} exact duplicate raw row(s)", omitted)
