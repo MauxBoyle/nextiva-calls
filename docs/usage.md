@@ -81,8 +81,11 @@ coverage boundary in Central Time.
 
 The importer searches without marking email as read, then checks sender and
 subject again in Python. It processes IMAP UIDs oldest-first. HTML email is
-preferred over plain text, attachments are ignored, and exactly one report link
-must use HTTPS and an exact allowlisted hostname.
+preferred over plain text, attachments are ignored, and exactly one HTML anchor
+visibly labeled `Missed Calls` (case-insensitive and whitespace-normalized) is
+used as the report link. Other Nextiva navigation and footer links are ignored.
+The selected link must use HTTPS and an exact allowlisted hostname. Plain-text
+messages continue to extract report URLs without requiring that label.
 
 Chrome waits for a table with the required normalized headers. Every row must
 have seven cells and a duration such as `4s`, `2m 3s`, or `1h 2m 3s`. Malformed

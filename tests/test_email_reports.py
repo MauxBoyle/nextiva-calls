@@ -35,7 +35,7 @@ def test_html_is_preferred_and_attachments_are_skipped():
     message = EmailMessage()
     message.set_content("https://ct.nextiva.com/plain")
     message.add_alternative(
-        '<a HREF = "https://ct.nextiva.com/html">Report</a>', subtype="html"
+        '<a HREF = "https://ct.nextiva.com/html">Missed Calls</a>', subtype="html"
     )
     message.add_attachment(
         b"https://ct.nextiva.com/attachment",
@@ -47,6 +47,58 @@ def test_html_is_preferred_and_attachments_are_skipped():
     assert is_html is True
     assert "/html" in body
     assert extract_report_url(message, HOSTS).endswith("/html")
+
+
+def test_html_selects_the_missed_calls_link_and_ignores_other_nextiva_links():
+    message = make_message(
+        """
+        <a href="https://ct.nextiva.com/home">Home</a>
+        <a href="https://ct.nextiva.com/report?token=report">\n Missed   Calls \n</a>
+        <a href="https://ct.nextiva.com/preferences">Preferences</a>
+        <a href="https://ct.nextiva.com/footer">Footer</a>
+        """,
+        subtype="html",
+    )
+
+    assert extract_report_url(message, HOSTS).endswith("token=report")
+
+
+@pytest.mark.parametrize(
+    "body, error",
+    [
+        ('<a href="https://ct.nextiva.com/report">Open report</a>', "exactly one"),
+        (
+            '<a href="https://ct.nextiva.com/one">Missed Calls</a>'
+            '<a href="https://ct.nextiva.com/two">MISSED CALLS</a>',
+            "exactly one",
+        ),
+        (
+            '<a href="https://ct.nextiva.com/report">Missed Calls</a>'
+            '<a href="https://ct.nextiva.com/report">Missed Calls</a>',
+            "exactly one",
+        ),
+    ],
+)
+def test_html_requires_exactly_one_missed_calls_link(body, error):
+    with pytest.raises(MessageError, match=error):
+        extract_report_url(make_message(body, subtype="html"), HOSTS)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://ct.nextiva.com/report",
+        "https://ct.nextiva.com:444/report",
+        "https://attacker@ct.nextiva.com/report",
+        "https://evil.example.test/report",
+    ],
+)
+def test_html_missed_calls_link_must_be_safe_and_allowlisted(url):
+    message = make_message(
+        f'<a href="{url}">Missed Calls</a>', subtype="html"
+    )
+    with pytest.raises(MessageError):
+        extract_report_url(message, HOSTS)
 
 
 @pytest.mark.parametrize(

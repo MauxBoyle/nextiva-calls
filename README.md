@@ -140,6 +140,10 @@ The command returns exit status `0` when all required reports succeed. It return
 `1` for unsafe/missing configuration, authentication, browser, parsing, CSV, or
 state errors. One bad report does not prevent later messages from being tried.
 
+For HTML messages, the importer identifies the report link by its visible
+`Missed Calls` label (ignoring case and extra whitespace). Other Nextiva links,
+such as navigation or footer links, are ignored.
+
 ## Weekly manager PDF
 
 `weekly-report` compares the selected Central-time Monday–Sunday week with the
