@@ -16,14 +16,29 @@ class MessageError(ValueError):
 class _LinkParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.links: list[str] = []
+        self.links: list[tuple[str, str]] = []
+        self._href: str | None = None
+        self._text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag.casefold() != "a":
             return
         for name, value in attrs:
             if name.casefold() == "href" and value:
-                self.links.append(value.strip())
+                self._href = value.strip()
+                self._text = []
+                return
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() != "a" or self._href is None:
+            return
+        self.links.append((self._href, "".join(self._text)))
+        self._href = None
+        self._text = []
 
 
 _TEXT_URL = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
@@ -75,7 +90,14 @@ def _candidate_urls(body: str, is_html: bool) -> list[str]:
     if is_html:
         parser = _LinkParser()
         parser.feed(body)
-        return parser.links
+        report_links = [
+            href
+            for href, text in parser.links
+            if " ".join(text.split()).casefold() == "missed calls"
+        ]
+        if len(report_links) != 1:
+            raise MessageError("HTML message must contain exactly one Missed Calls link")
+        return report_links
     return [match.group(0).rstrip(".,);]") for match in _TEXT_URL.finditer(body)]
 
 

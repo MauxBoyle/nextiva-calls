@@ -77,41 +77,56 @@ def run_import(
     matched = imported = added_rows = report_failures = 0
 
     for raw in mailbox_factory(config):
+        message = BytesParser(policy=policy.default).parsebytes(raw.content)
+        sender = parseaddr(decoded_header(message, "From"))[1].casefold()
+        subject = decoded_header(message, "Subject")
+        if sender != config.email_sender.casefold() or subject != config.email_subject:
+            continue
+        matched += 1
+        identifier = report_identifier(
+            message,
+            server=config.imap_server,
+            uidvalidity=raw.uidvalidity,
+            uid=raw.uid,
+        )
+        if identifier in processed:
+            continue
         try:
-            message = BytesParser(policy=policy.default).parsebytes(raw.content)
-            sender = parseaddr(decoded_header(message, "From"))[1].casefold()
-            subject = decoded_header(message, "Subject")
-            if (
-                sender != config.email_sender.casefold()
-                or subject != config.email_subject
-            ):
-                continue
-            matched += 1
-            identifier = report_identifier(
-                message,
-                server=config.imap_server,
-                uidvalidity=raw.uidvalidity,
-                uid=raw.uid,
+            report_date = (
+                parsedate_to_datetime(message.get("Date", "")).date().isoformat()
             )
-            if identifier in processed:
-                continue
-            try:
-                report_date = (
-                    parsedate_to_datetime(message.get("Date", "")).date().isoformat()
-                )
-            except (TypeError, ValueError, OverflowError):
-                report_date = "unknown"
-            logger.info("Processing report message dated {}", report_date)
+        except (TypeError, ValueError, OverflowError):
+            report_date = "unknown"
+        logger.info("Processing report message dated {}", report_date)
+        try:
             url = extract_report_url(message, config.allowed_hosts)
+        except MessageError:
+            report_failures += 1
+            logger.error(
+                "Skipped one matching message because its report link could not be "
+                "extracted or validated"
+            )
+            continue
+        try:
             loaded = report_loader(url, config.report_timeout_seconds)
             # Supporting a record list keeps custom loaders written for older
             # versions compatible while the Selenium loader returns ReportResult.
-            result = (
-                loaded if isinstance(loaded, ReportResult) else ReportResult(loaded)
-            )
-        except (MessageError, ReportError, ValueError):
+            result = loaded if isinstance(loaded, ReportResult) else ReportResult(loaded)
+        except ReportError as error:
             report_failures += 1
-            logger.error("Skipped one matching message because its report was invalid")
+            logger.debug("Report loading or parsing failed: {}", error)
+            logger.error(
+                "Skipped one matching message because its report could not be "
+                "loaded or parsed"
+            )
+            continue
+        except ValueError:
+            report_failures += 1
+            logger.debug("Report loading or parsing failed validation")
+            logger.error(
+                "Skipped one matching message because its report could not be "
+                "loaded or parsed"
+            )
             continue
 
         fingerprint = report_fingerprint(

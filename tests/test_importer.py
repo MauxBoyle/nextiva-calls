@@ -128,6 +128,45 @@ def test_message_report_failures_continue_but_return_failure(tmp_path):
     assert loaded[-1].endswith("/good")
 
 
+def test_report_failure_diagnostics_do_not_include_report_urls(tmp_path, monkeypatch):
+    messages = [
+        raw_message(uid="1", message_id="unsafe", link="http://ct.nextiva.com/secret"),
+        raw_message(uid="2", message_id="bad", link="https://ct.nextiva.com/secret"),
+    ]
+    errors = []
+
+    class LogSink:
+        def error(self, message):
+            errors.append(message)
+
+        def info(self, *_):
+            pass
+
+        def warning(self, *_):
+            pass
+
+        def debug(self, *_):
+            pass
+
+    monkeypatch.setattr("nextiva_calls.importer.logger", LogSink())
+
+    result = run_import(
+        config(tmp_path),
+        mailbox_factory=lambda _: messages,
+        report_loader=lambda *_: (_ for _ in ()).throw(ReportError("secret")),
+        csv_writer=lambda *_: 1,
+        state_reader=lambda _: set(),
+        state_writer=lambda *_: None,
+    )
+
+    assert result is False
+    assert errors == [
+        "Skipped one matching message because its report link could not be extracted or validated",
+        "Skipped one matching message because its report could not be loaded or parsed",
+    ]
+    assert all("ct.nextiva.com/secret" not in error for error in errors)
+
+
 def test_csv_and_state_failures_stop_immediately(tmp_path):
     common = {
         "mailbox_factory": lambda _: [raw_message()],

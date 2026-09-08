@@ -8,6 +8,7 @@ from nextiva_calls.report import (
     ReportError,
     load_report,
     normalized_header,
+    parse_rendered_report_rows,
     parse_report_period,
     parse_report_rows,
 )
@@ -79,8 +80,10 @@ class Element:
 
 
 class Driver:
-    def __init__(self, tables):
+    def __init__(self, tables, nextiva_body_tables=None, page_text=""):
         self.tables = tables
+        self.nextiva_body_tables = nextiva_body_tables or []
+        self.page_text = page_text
         self.visited = None
         self.quit_called = False
 
@@ -88,7 +91,16 @@ class Driver:
         self.visited = url
 
     def find_elements(self, by, value):
-        return self.tables if (by, value) == (By.TAG_NAME, "table") else []
+        if (by, value) == (By.TAG_NAME, "table"):
+            return self.tables
+        if (by, value) == (By.CSS_SELECTOR, "table.nx-table_body"):
+            return self.nextiva_body_tables
+        return []
+
+    def find_element(self, by, value):
+        if (by, value) == (By.TAG_NAME, "body"):
+            return Element(text=self.page_text)
+        raise LookupError
 
     def quit(self):
         self.quit_called = True
@@ -135,6 +147,100 @@ def test_load_report_waits_for_matching_table_and_always_quits():
     assert result[0].duration == 2
     assert driver.visited.endswith("/inactive")
     assert driver.quit_called is True
+
+
+def test_load_report_supports_nextiva_body_table_without_header_cells():
+    cells = [
+        Element(text=value)
+        for value in [
+            "Membership",
+            "09/03/26 07:56:24 AM",
+            "18s",
+            "Terminating",
+            "Yes - Forwarded",
+            "+12818976523",
+            "+13126702401",
+        ]
+    ]
+    body_table = Element(headings=[], rows=[Element(cells=cells)])
+    driver = Driver([], nextiva_body_tables=[body_table])
+
+    result = load_report(
+        "https://ct.nextiva.com/inactive",
+        7,
+        browser_factory=lambda: driver,
+        wait_factory=ImmediateWait,
+    )
+
+    assert result[0].name == "Membership"
+    assert result[0].answered == "Yes - Forwarded"
+    assert driver.quit_called is True
+
+
+def test_load_report_falls_back_to_validated_rendered_nextiva_text():
+    body_table = Element(headings=[], rows=[Element(cells=[Element(text="extra")] * 8)])
+    page_text = """Missed Call Daily Report
+Name
+Time of Call
+Duration
+Direction
+Answered
+From
+To
+Actions
+Membership
+09/03/26 07:56:24 AM
+18s
+Terminating
+Yes - Forwarded
++12818976523
++13126702401"""
+    driver = Driver([], nextiva_body_tables=[body_table], page_text=page_text)
+
+    result = load_report(
+        "https://ct.nextiva.com/inactive",
+        7,
+        browser_factory=lambda: driver,
+        wait_factory=ImmediateWait,
+    )
+
+    assert result[0].name == "Membership"
+    assert result[0].duration == 18
+
+
+def test_load_report_waits_for_nextiva_rendered_text_without_a_table():
+    page_text = """Missed Call Daily Report
+Name
+Time of Call
+Duration
+Direction
+Answered
+From
+To
+Actions
+Membership
+09/03/26 07:56:24 AM
+18s
+Terminating
+Yes - Forwarded
++12818976523
++13126702401"""
+    driver = Driver([], page_text=page_text)
+
+    result = load_report(
+        "https://ct.nextiva.com/inactive",
+        7,
+        browser_factory=lambda: driver,
+        wait_factory=ImmediateWait,
+    )
+
+    assert result[0].to_number == "+13126702401"
+    assert driver.quit_called is True
+
+
+def test_rendered_report_text_requires_a_name_header():
+    with pytest.raises(ReportError, match="Name header"):
+        parse_rendered_report_rows("Missed Call Daily Report")
 
 
 def test_load_report_wraps_timeout_without_leaking_url_and_quits():
