@@ -48,24 +48,34 @@ uv run --env-file .env python -m nextiva_calls
 
 ## Weekly manager report
 
-Create a PDF comparing the current Central-time Monday–Sunday week with the
-previous week:
+Create a Membership PDF comparing the seven complete Central-time days ending
+yesterday with the preceding seven days:
 
 ```bash
 uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 ```
 
-`--week-start` accepts only Monday dates in `YYYY-MM-DD` format. The default
-output is the printable three-page Letter PDF
+`--week-start` accepts any date in `YYYY-MM-DD` format as the beginning of a
+seven-day historical period. The default output is the printable three-page Letter PDF
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
 elsewhere.
 
-The PDF includes period, data-through, and generation timestamps; inbound
-outcomes, durations, routing attempts, coverage, hunt groups, and weekday/hour
-views. Its manager-only agent table shows the top five named agents by answers,
-then name, plus `Other / Unattributed`; it states how many further agents were
-omitted. It never displays customer or agent phone numbers or repeat callers.
+Membership metrics include calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP` plus calls
+that offer an exact lookup phone-number match or a uniquely mapped final-four
+extension. Other calls do not affect Membership outcomes, coverage, heatmaps,
+routing, or agent metrics. The hunt-group table is the exception: it compares
+all in-period candidates limited to Reception, Membership, Certification, and
+Bookstore.
+
+The PDF includes period, data-through, and generation timestamps; a stacked
+weekday outcome chart, durations, routing attempts, coverage, hunt groups, and
+weekday/hour views. The chart has `Yes` (human or forwarded answer), `No`
+(unanswered), and `Voicemail` segments, adding `Unknown / Ambiguous` only when
+needed for accurate totals. Its manager-only agent table shows the top five
+lookup-listed named agents by answers, then name, plus `Other / Unattributed`;
+it states how many further agents were omitted. It never displays customer or
+agent phone numbers or repeat callers.
 It contains no outbound, speed-of-answer, wait-time, or “agent miss” metrics.
 Each offered destination is an agent offer. A named agent receives answer credit
 only if exactly one known agent is the sole possible answer destination.

@@ -35,7 +35,12 @@ def _weekly_parser() -> argparse.ArgumentParser:
 
 def _run_weekly_report(arguments: list[str]) -> int:
     """Generate a weekly PDF without requiring mailbox credentials."""
-    from nextiva_calls.weekly_metrics import load_candidates, parse_week_start, week_for
+    from nextiva_calls.weekly_metrics import (
+        load_candidates,
+        parse_week_start,
+        summarize_week,
+        week_for,
+    )
     from nextiva_calls.weekly_report import render_weekly_report
 
     parsed = _weekly_parser().parse_args(arguments)
@@ -52,16 +57,19 @@ def _run_weekly_report(arguments: list[str]) -> int:
     lookup_value = os.environ.get("NEXTIVA_AGENT_LOOKUP_FILE", "").strip()
     if not lookup_value:
         raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE is required for weekly reports")
+    membership_hunt_group = os.environ.get(
+        "NEXTIVA_MEMBERSHIP_HUNT_GROUP", "Membership"
+    ).strip()
+    if not membership_hunt_group:
+        raise ConfigError("NEXTIVA_MEMBERSHIP_HUNT_GROUP must not be blank")
     output = parsed.output or Path("reports") / (
         f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
     )
     lookup = load_agent_lookup(Path(lookup_value))
     rows = load_candidates(candidates)
-    from nextiva_calls.weekly_metrics import summarize_week
-
     render_weekly_report(
-        summarize_week(rows, week, lookup, metadata),
-        summarize_week(rows, week.prior, lookup, metadata),
+        summarize_week(rows, week, lookup, metadata, membership_hunt_group),
+        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group),
         output,
     )
     logger.info("Wrote weekly report to {}", output)

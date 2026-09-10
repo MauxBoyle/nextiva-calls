@@ -5,7 +5,7 @@ from nextiva_calls import app
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
 from nextiva_calls.segments import AgentLookup
 from nextiva_calls.weekly_metrics import Week, summarize_week
-from nextiva_calls.weekly_report import render_weekly_report
+from nextiva_calls.weekly_report import StackedBarChart, render_weekly_report
 
 
 def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
@@ -46,6 +46,8 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
     assert content.startswith(b"%PDF")
     assert b"PRELIMINARY" in content
     assert b"Aug 17, 2026" in content
+    assert b"Membership candidate calls" in content
+    assert b"% Human answered" in content
     assert b"15550001" not in content
     assert b"15550101" not in content
     assert content.count(b"/Type /Page\n") == 3
@@ -64,6 +66,22 @@ def test_weekly_report_uses_dashboard_default_filename(monkeypatch, tmp_path):
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
     assert app.main(["weekly-report", "--week-start", "2026-08-17"]) == 0
     assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-17_to_2026-08-23.pdf").exists()
+
+
+def test_weekly_report_default_uses_complete_days_ending_yesterday(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    raw = tmp_path / "calls.csv"
+    lookup = tmp_path / "agents.csv"
+    lookup.write_text("phone_number,agent\n15550101,Alex\n", encoding="utf-8")
+    with raw.with_suffix(".candidate-calls.csv").open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
+        writer.writeheader()
+    monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
+    monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
+    monkeypatch.setattr("nextiva_calls.weekly_metrics.week_for", lambda: Week(date(2026, 8, 13)))
+
+    assert app.main(["weekly-report"]) == 0
+    assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-13_to_2026-08-19.pdf").exists()
 
 
 def test_agent_dashboard_limits_named_agents_to_top_five(tmp_path):
@@ -92,6 +110,18 @@ def test_agent_dashboard_limits_named_agents_to_top_five(tmp_path):
     assert b"1 additional named agent was omitted" in content
 
 
-def test_weekly_report_rejects_non_monday(monkeypatch, tmp_path):
+def test_daily_outcome_chart_uses_reporting_period_order(tmp_path):
+    summary = summarize_week([], Week(date(2026, 8, 20)), AgentLookup({}, {}), tmp_path / "missing.sqlite3")
+
+    assert StackedBarChart(summary).days == ("Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed")
+
+
+def test_weekly_report_accepts_non_monday(monkeypatch, tmp_path):
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(tmp_path / "agents.csv"))
-    assert app.main(["weekly-report", "--week-start", "2026-08-18"]) == 1
+    (tmp_path / "agents.csv").write_text("phone_number,agent\n15550101,Alex\n", encoding="utf-8")
+    raw = tmp_path / "calls.csv"
+    with raw.with_suffix(".candidate-calls.csv").open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
+        writer.writeheader()
+    monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
+    assert app.main(["weekly-report", "--week-start", "2026-08-18"]) == 0

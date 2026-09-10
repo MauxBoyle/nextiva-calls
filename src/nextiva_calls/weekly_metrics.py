@@ -23,11 +23,13 @@ OUTCOMES = (
     "Ambiguous",
 )
 OTHER = "Other / Unattributed"
+HUNT_GROUPS = ("Reception", "Membership", "Certification", "Bookstore")
+OUTCOME_BUCKETS = ("Yes", "No", "Voicemail", "Unknown / Ambiguous")
 
 
 @dataclass(frozen=True)
 class Week:
-    """A Monday-through-Sunday reporting period in Central time."""
+    """A seven-day historical reporting period in Central time."""
 
     start: date
 
@@ -74,26 +76,25 @@ class WeeklySummary:
     agents: dict[str, dict[str, int]]
     weekday_hour_volume: dict[tuple[str, int], int]
     voicemail_unanswered_by_hour: dict[tuple[str, int], int]
+    weekday_outcomes: dict[tuple[str, str], int]
     routing_attempt_distribution: dict[int, int]
     anomalies: dict[str, int]
     data_through: datetime | None
 
 
 def week_for(day: date | None = None) -> Week:
-    """Return the Central-time Monday containing *day* (or today)."""
+    """Return the seven complete Central-time days ending before *day*."""
     if day is None:
         day = datetime.now(CENTRAL_TIME).date()
-    return Week(day - timedelta(days=day.weekday()))
+    return Week(day - timedelta(days=7))
 
 
 def parse_week_start(value: str) -> Week:
-    """Parse an ISO date and reject dates that are not Mondays."""
+    """Parse an ISO date as the beginning of a seven-day period."""
     try:
         chosen = date.fromisoformat(value)
     except ValueError as error:
         raise ValueError("--week-start must be a date in YYYY-MM-DD format") from error
-    if chosen.weekday() != 0:
-        raise ValueError("--week-start must be a Monday")
     return Week(chosen)
 
 
@@ -147,6 +148,17 @@ def _duration(row: dict[str, str]) -> int:
         return max(0, int(row.get("maximum_duration_seconds", "0") or 0))
     except ValueError:
         return 0
+
+
+def _outcome_bucket(outcome: str) -> str:
+    """Map detailed outcomes into the manager chart's displayed buckets."""
+    if outcome in {"Human answered", "Forwarded answered"}:
+        return "Yes"
+    if outcome == "Unanswered":
+        return "No"
+    if outcome == "Voicemail":
+        return "Voicemail"
+    return "Unknown / Ambiguous"
 
 
 def _period_is_continuous(path: Path, week: Week) -> bool:
@@ -230,13 +242,24 @@ def summarize_week(
     week: Week,
     lookup: AgentLookup,
     metadata_path: Path,
+    membership_hunt_group: str = "Membership",
 ) -> WeeklySummary:
-    """Summarize candidates in one Central Monday--Sunday reporting week."""
-    selected = [
+    """Summarize Membership candidates in one Central-time seven-day period."""
+    in_period = [
         (row, when)
         for row in candidates
         if (when := _timestamp(row.get("call_timestamp_ct", "")))
         and week.start_at <= when < week.end_at
+    ]
+    selected = [
+        (row, when)
+        for row, when in in_period
+        if row.get("hunt_group") == membership_hunt_group
+        or any(
+            _agent_for(destination, lookup) is not None
+            for destination in row.get("offered_destinations", "").split(";")
+            if destination
+        )
     ]
     outcomes = Counter(
         row.get("outcome", "Unknown")
@@ -248,6 +271,10 @@ def summarize_week(
     weekdays = Counter(when.strftime("%a") for _, when in selected)
     hours = Counter(when.hour for _, when in selected)
     weekday_hours = Counter((when.strftime("%a"), when.hour) for _, when in selected)
+    weekday_outcomes = Counter(
+        (when.strftime("%a"), _outcome_bucket(row.get("outcome") or "Unknown"))
+        for row, when in selected
+    )
     voicemail_unanswered = Counter(
         (when.strftime("%a"), when.hour)
         for row, when in selected
@@ -259,18 +286,24 @@ def summarize_week(
         if row.get("from_number_normalized", "")
     )
     durations = [_duration(row) for row, _ in selected]
-    groups: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    groups: dict[str, Counter[str]] = {group: Counter() for group in HUNT_GROUPS}
     agents: defaultdict[str, Counter[str]] = defaultdict(Counter)
     attempts = 0
     answered_talk = 0
     attempt_distribution: Counter[int] = Counter()
     anomalies: Counter[str] = Counter()
-    for row, _ in selected:
+    # The hunt-group table is a small cross-department comparison, so it uses
+    # all in-period candidates while the rest of the dashboard stays scoped to
+    # Membership candidates.
+    for row, _ in in_period:
         group = row.get("hunt_group") or "Unknown"
+        if group in groups:
+            outcome = row.get("outcome") or "Unknown"
+            groups[group]["calls"] += 1
+            groups[group][outcome] += 1
+            groups[group][row.get("routing_mode") or "Unknown"] += 1
+    for row, _ in selected:
         outcome = row.get("outcome") or "Unknown"
-        groups[group]["calls"] += 1
-        groups[group][outcome] += 1
-        groups[group][row.get("routing_mode") or "Unknown"] += 1
         offers = [
             item for item in row.get("offered_destinations", "").split(";") if item
         ]
@@ -328,7 +361,7 @@ def summarize_week(
         },
         hour_volume={key: hours[key] for key in range(24)},
         repeat_callers={key: value for key, value in callers.items() if value > 1},
-        hunt_groups={key: dict(value) for key, value in sorted(groups.items())},
+        hunt_groups={key: dict(value) for key, value in groups.items()},
         agents={
             key: {
                 **{field: value for field, value in values.items() if field != "durations"},
@@ -345,6 +378,11 @@ def summarize_week(
             (day, hour): voicemail_unanswered[(day, hour)]
             for day in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
             for hour in range(24)
+        },
+        weekday_outcomes={
+            (day, bucket): weekday_outcomes[(day, bucket)]
+            for day in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+            for bucket in OUTCOME_BUCKETS
         },
         routing_attempt_distribution=dict(sorted(attempt_distribution.items())),
         anomalies={

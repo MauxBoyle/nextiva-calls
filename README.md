@@ -41,16 +41,18 @@ You can also run it as a Python module:
 uv run python -m nextiva_calls
 ```
 
-Create a management-shareable weekly PDF (Monday through Sunday, Central Time):
+Create a management-shareable Membership weekly PDF. By default it covers the
+seven complete Central-time days ending yesterday:
 
 ```bash
 uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 ```
 
-`--week-start` must be a Monday. By default, the printable three-page Letter PDF
-is written as `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; use `--output PATH`
-to choose a different location.
+`--week-start` accepts any ISO date (`YYYY-MM-DD`) as the start of a seven-day
+historical period. By default, the printable three-page Letter PDF is written as
+`reports/Nextiva_Weekly_<start>_to_<end>.pdf`; use `--output PATH` to choose a
+different location.
 
 ## Environment Variables
 
@@ -146,11 +148,22 @@ such as navigation or footer links, are ignored.
 
 ## Weekly manager PDF
 
-`weekly-report` compares the selected Central-time Monday–Sunday week with the
-prior week. It includes reporting-period, data-through, and generation
-timestamps; daily volume, coverage, routing, hunt-group, and heatmap views; and
-a manager-only agent table. The agent table shows at most five named agents,
-then `Other / Unattributed`; additional named agents are counted but omitted.
+`weekly-report` compares a seven-day Central-time period with the preceding
+seven days. Its default period ends yesterday, avoiding partial current-day
+data. Membership metrics include calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
+calls that offer a destination matching the agent lookup (exact number or a
+uniquely mapped final-four extension). Unrelated calls do not affect Membership
+headlines, coverage, heatmaps, outcomes, routing, or agent metrics.
+
+It includes reporting-period, data-through, and generation timestamps; a stacked
+weekday outcome chart, coverage, routing, hunt-group, and heatmap views; and a
+manager-only agent table. The chart combines human and forwarded answers as
+`Yes`, shows `No` for unanswered calls and `Voicemail` separately, and adds
+`Unknown / Ambiguous` only when present. The hunt-group comparison is the sole
+cross-department exception: it uses all in-period candidates for Reception,
+Membership, Certification, and Bookstore. The agent table shows at most five
+lookup-listed named agents, then `Other / Unattributed`; additional named agents
+are counted but omitted.
 It deliberately does not make outbound, speed-of-answer, wait-time, or “agent
 miss” claims, and it never displays customer or agent phone numbers.
 
