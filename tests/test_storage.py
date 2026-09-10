@@ -115,7 +115,7 @@ def test_analysis_keeps_first_of_historical_raw_duplicates(tmp_path):
     analysis = tmp_path / "calls.analysis.csv"
     append_records(raw, [record(), record(), record("Blair")])
     lookup_file = tmp_path / "agents.csv"
-    lookup_file.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    lookup_file.write_text("phone_number,display_name,department,destination_type\n555-0200,Alex,Membership,agent\n", encoding="utf-8")
     assert save_analysis(analysis, raw, load_agent_lookup(lookup_file)) == 2
     assert len(load_csv(raw)) == 3
     with analysis.open(newline="", encoding="utf-8") as stream:
@@ -128,7 +128,7 @@ def test_candidate_calls_are_stable_and_created_from_analysis(tmp_path):
     candidates = tmp_path / "calls.candidate-calls.csv"
     append_records(raw, [record(), record("Blair")])
     lookup_file = tmp_path / "agents.csv"
-    lookup_file.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    lookup_file.write_text("phone_number,display_name,department,destination_type\n555-0200,Alex,Membership,agent\n", encoding="utf-8")
     save_analysis(analysis, raw, load_agent_lookup(lookup_file))
     assert save_candidate_calls(candidates, analysis) == 2
     original = candidates.read_bytes()
@@ -148,7 +148,7 @@ def test_candidate_calls_reject_bad_analysis_and_preserves_existing_file(tmp_pat
     raw = tmp_path / "calls.csv"
     append_records(raw, [record()])
     lookup_file = tmp_path / "agents.csv"
-    lookup_file.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    lookup_file.write_text("phone_number,display_name,department,destination_type\n555-0200,Alex,Membership,agent\n", encoding="utf-8")
     save_analysis(analysis, raw, load_agent_lookup(lookup_file))
     save_candidate_calls(candidates, analysis)
     original = candidates.read_bytes()

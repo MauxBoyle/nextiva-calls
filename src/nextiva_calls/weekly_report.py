@@ -151,20 +151,21 @@ def render_weekly_report(current: WeeklySummary, prior: WeeklySummary, output: P
     if current.preliminary or prior.preliminary:
         story.extend([Spacer(1, .06 * inch), Paragraph("<font color='#A61B1B'><b>PRELIMINARY</b></font> — metadata coverage is incomplete for one or both comparison weeks. Use directional results with care.", styles["Normal"])])
     _heading(story, styles, "Headline metrics and week-over-week comparison")
-    story.append(_table([["Measure", "Current", "Prior", "Change"], ["Membership candidate calls", current.calls, prior.calls, _delta(current.calls-prior.calls)], ["Human answered", current.outcomes["Human answered"], prior.outcomes["Human answered"], _delta(current.outcomes["Human answered"]-prior.outcomes["Human answered"])], ["% Human answered", _percentage(current.outcomes["Human answered"], current.calls), _percentage(prior.outcomes["Human answered"], prior.calls), _percentage_delta(current.outcomes["Human answered"], current.calls, prior.outcomes["Human answered"], prior.calls)], ["Answered-call talk time", _seconds(current.answered_talk_seconds), _seconds(prior.answered_talk_seconds), _seconds(current.answered_talk_seconds-prior.answered_talk_seconds)]], [2.6*inch, 1.25*inch, 1.25*inch, 1.25*inch]))
+    confirmed = "Confirmed human answered"
+    story.append(_table([["Measure", "Current", "Prior", "Change"], ["Membership candidate calls", current.calls, prior.calls, _delta(current.calls-prior.calls)], [confirmed, current.outcomes[confirmed], prior.outcomes[confirmed], _delta(current.outcomes[confirmed]-prior.outcomes[confirmed])], ["% confirmed human answered", _percentage(current.outcomes[confirmed], current.calls), _percentage(prior.outcomes[confirmed], prior.calls), _percentage_delta(current.outcomes[confirmed], current.calls, prior.outcomes[confirmed], prior.calls)], ["Answered-call talk time", _seconds(current.answered_talk_seconds), _seconds(prior.answered_talk_seconds), _seconds(current.answered_talk_seconds-prior.answered_talk_seconds)]], [2.6*inch, 1.25*inch, 1.25*inch, 1.25*inch]))
     story.extend([Spacer(1, .08 * inch), StackedBarChart(current)])
     _heading(story, styles, "Business-hours coverage")
     story.append(_table([["Time category", "Calls", "Share"]] + [[category, current.time_categories[category], f"{current.time_categories[category] / current.calls:.0%}" if current.calls else "—"] for category in ("Business hours", "After hours", "Weekend", "Holiday")], [2.5*inch, 1*inch, 1*inch]))
     _heading(story, styles, "Actionable observations")
     peak_day = max(DAYS, key=lambda day: current.weekday_volume[day])
-    observation = f"• Peak daily volume: <b>{peak_day}</b> ({current.weekday_volume[peak_day]} calls).<br/>• Business-hours calls: <b>{current.time_categories['Business hours']}</b> of {current.calls}.<br/>• Human-answered rate: <b>{current.outcomes['Human answered'] / current.calls:.0%}</b>" if current.calls else "• No candidate calls were recorded in this reporting period."
+    observation = f"• Peak daily volume: <b>{peak_day}</b> ({current.weekday_volume[peak_day]} calls).<br/>• Business-hours calls: <b>{current.time_categories['Business hours']}</b> of {current.calls}.<br/>• Confirmed-human-answer rate: <b>{current.outcomes[confirmed] / current.calls:.0%}</b>" if current.calls else "• No candidate calls were recorded in this reporting period."
     story.extend([Paragraph(observation, styles["Normal"]), PageBreak()])
 
     story.append(Paragraph("Membership routing and coverage detail", styles["Title"]))
     _heading(story, styles, "Approved hunt groups (all calls; different scope)")
     story.append(Paragraph("This comparison includes only calls in Reception, Membership, Certification, and Bookstore. It does not include lookup-matched Membership candidates routed through other hunt groups, so its total can differ from the Membership candidate-call headline.", styles["Tiny"]))
     story.append(Spacer(1, .035 * inch))
-    groups = [["Hunt group", "Calls", "Answered", "Sequential", "Simultaneous"]] + [[name, values.get("calls", 0), values.get("Human answered", 0), values.get("Sequential", 0), values.get("Simultaneous", 0)] for name, values in current.hunt_groups.items()]
+    groups = [["Hunt group", "Calls", "Confirmed", "Sequential", "Simultaneous"]] + [[name, values.get("calls", 0), values.get(confirmed, 0), values.get("Sequential", 0), values.get("Simultaneous", 0)] for name, values in current.hunt_groups.items()]
     story.append(_table(groups, [2.1*inch, .75*inch, 1*inch, 1.1*inch, 1.1*inch], small=True))
     _heading(story, styles, "Weekday / Central-hour call heatmap")
     heat_hours, maximum = list(range(8, 19)), max((current.weekday_hour_volume[(day, hour)] for day in DAYS for hour in range(8, 19)), default=0) or 1

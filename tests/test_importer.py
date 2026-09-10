@@ -13,7 +13,7 @@ from nextiva_calls.storage import StorageError, load_csv, load_state
 
 def config(tmp_path):
     lookup = tmp_path / "agents.csv"
-    lookup.write_text("phone_number,agent\n555-0200,Alex\n", encoding="utf-8")
+    lookup.write_text("phone_number,display_name,department,destination_type\n555-0200,Alex,Membership,agent\n", encoding="utf-8")
     return Config(
         email_username="learner@example.test",
         email_app_password="invented-secret",

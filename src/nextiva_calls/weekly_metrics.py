@@ -15,8 +15,10 @@ from nextiva_calls.segments import CENTRAL_TIME, CLOSURE_DATES_2026, AgentLookup
 from nextiva_calls.storage import StorageError
 
 OUTCOMES = (
-    "Human answered",
-    "Forwarded answered",
+    "Confirmed human answered",
+    "Connected / unknown attribution",
+    "Answered / unattributed",
+    "Forwarded / routing only",
     "Voicemail",
     "Unanswered",
     "Unknown",
@@ -134,11 +136,13 @@ def _category(when: datetime) -> str:
 
 def _agent_for(destination: str, lookup: AgentLookup) -> str | None:
     if destination in lookup.by_number:
-        return lookup.by_number[destination]
+        found = lookup.by_number[destination]
+        return found.display_name if found.destination_type == "agent" else None
     if len(destination) >= 4:
         matches = lookup.by_extension.get(destination[-4:], frozenset())
         if len(matches) == 1:
-            return next(iter(matches))
+            found = next(iter(matches))
+            return found.display_name if found.destination_type == "agent" else None
     return None
 
 
@@ -152,7 +156,7 @@ def _duration(row: dict[str, str]) -> int:
 
 def _outcome_bucket(outcome: str) -> str:
     """Map detailed outcomes into the manager chart's displayed buckets."""
-    if outcome in {"Human answered", "Forwarded answered"}:
+    if outcome == "Confirmed human answered":
         return "Yes"
     if outcome == "Unanswered":
         return "No"
@@ -257,7 +261,7 @@ def summarize_week(
         if row.get("hunt_group") == membership_hunt_group
         or any(
             _agent_for(destination, lookup) is not None
-            for destination in row.get("offered_destinations", "").split(";")
+            for destination in row.get("offered_agent_destinations", "").split(";")
             if destination
         )
     ]
@@ -304,34 +308,30 @@ def summarize_week(
             groups[group][row.get("routing_mode") or "Unknown"] += 1
     for row, _ in selected:
         outcome = row.get("outcome") or "Unknown"
-        offers = [
-            item for item in row.get("offered_destinations", "").split(";") if item
-        ]
+        offers = [item for item in row.get("offered_agent_destinations", "").split(";") if item]
         duration = _duration(row)
         attempts += len(offers)
         attempt_distribution[len(offers)] += 1
         for destination in offers:
             agent = _agent_for(destination, lookup) or OTHER
             agents[agent]["offers"] += 1
-        positives = [
+        confirmed = [
             item
-            for item in row.get("possible_answering_destinations", "").split(";")
+            for item in row.get("confirmed_answered_agent_destinations", "").split(";")
             if item
         ]
-        answer_agents = {_agent_for(item, lookup) for item in positives}
+        # Reconstruction only puts known-agent ordinary Yes segments here.  A
+        # malformed candidate is still kept conservative: it receives no credit.
+        answer_agents = {_agent_for(item, lookup) for item in confirmed}
         answer_agents.discard(None)
-        if positives:
-            credited = (
-                next(iter(answer_agents))
-                if len(answer_agents) == 1 and len(positives) == 1
-                else OTHER
-            )
+        if len(confirmed) == 1 and len(answer_agents) == 1:
+            credited = next(iter(answer_agents))
             agents[credited]["answers"] += 1
             agents[credited]["talk_seconds"] += duration
             agents[credited].setdefault("durations", []).append(duration)
             answered_talk += duration
-            if credited == OTHER:
-                anomalies["Unattributed answers"] += 1
+        if outcome in {"Connected / unknown attribution", "Answered / unattributed"}:
+            anomalies["Unattributed answers"] += 1
         if outcome == "Ambiguous":
             anomalies["Ambiguous outcomes"] += 1
         if outcome == "Unknown":

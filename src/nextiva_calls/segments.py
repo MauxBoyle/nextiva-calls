@@ -21,6 +21,7 @@ ANALYSIS_COLUMNS = CSV_COLUMNS + (
     "from_number_normalized",
     "to_number_normalized",
     "destination_label",
+    "destination_type",
     "is_voicemail_destination",
     "is_duplicate",
     "is_anomaly",
@@ -54,11 +55,20 @@ class AgentLookupError(ValueError):
 
 
 @dataclass(frozen=True)
-class AgentLookup:
-    """Full phone-number labels and their possibly ambiguous extensions."""
+class Destination:
+    """A manually maintained destination and its role in call routing."""
 
-    by_number: dict[str, str]
-    by_extension: dict[str, frozenset[str]]
+    display_name: str
+    department: str
+    destination_type: str
+
+
+@dataclass(frozen=True)
+class AgentLookup:
+    """Full phone-number destinations and their possibly ambiguous extensions."""
+
+    by_number: dict[str, Destination]
+    by_extension: dict[str, frozenset[Destination]]
 
 
 def normalize_phone_number(value: str) -> str | None:
@@ -75,41 +85,56 @@ def normalize_phone_number(value: str) -> str | None:
 
 
 def load_agent_lookup(path: Path | None) -> AgentLookup:
-    """Read and validate a ``phone_number,agent`` CSV lookup file."""
+    """Read and validate the role-aware destination lookup CSV."""
     if path is None:
         raise AgentLookupError("NEXTIVA_AGENT_LOOKUP_FILE is required")
     try:
         with path.open(newline="", encoding="utf-8") as stream:
             reader = csv.DictReader(stream)
-            if reader.fieldnames != ["phone_number", "agent"]:
+            if reader.fieldnames != [
+                "phone_number",
+                "display_name",
+                "department",
+                "destination_type",
+            ]:
                 raise AgentLookupError(
-                    "Agent lookup must have exactly phone_number,agent headers"
+                    "Agent lookup must have exactly phone_number,display_name,department,destination_type headers"
                 )
-            mappings: dict[str, str] = {}
+            mappings: dict[str, Destination] = {}
             for row_number, row in enumerate(reader, start=2):
                 phone = clean_text(row.get("phone_number") or "")
-                agent = clean_text(row.get("agent") or "")
+                display_name = clean_text(row.get("display_name") or "")
+                department = clean_text(row.get("department") or "")
+                destination_type = clean_text(row.get("destination_type") or "").casefold()
                 normalized = normalize_phone_number(phone)
-                if normalized is None or len(normalized) < 4 or not agent or None in row:
+                if (
+                    normalized is None
+                    or len(normalized) < 4
+                    or not display_name
+                    or not department
+                    or destination_type not in {"agent", "system"}
+                    or None in row
+                ):
                     raise AgentLookupError(
                         f"Agent lookup row {row_number} has a blank or invalid value"
                     )
+                destination = Destination(display_name, department, destination_type)
                 existing = mappings.get(normalized)
-                if existing is not None and existing != agent:
+                if existing is not None and existing != destination:
                     raise AgentLookupError(
-                        f"Agent lookup maps {normalized} to conflicting agents"
+                        f"Agent lookup maps {normalized} to conflicting destinations"
                     )
-                mappings[normalized] = agent
+                mappings[normalized] = destination
     except AgentLookupError:
         raise
     except (OSError, UnicodeError, csv.Error) as error:
         raise AgentLookupError("Agent lookup file could not be read") from error
     if not mappings:
         raise AgentLookupError("Agent lookup must contain at least one mapping")
-    extensions: defaultdict[str, set[str]] = defaultdict(set)
-    for number, agent in mappings.items():
+    extensions: defaultdict[str, set[Destination]] = defaultdict(set)
+    for number, destination in mappings.items():
         if len(number) >= 4:
-            extensions[number[-4:]].add(agent)
+            extensions[number[-4:]].add(destination)
     return AgentLookup(
         mappings, {extension: frozenset(agents) for extension, agents in extensions.items()}
     )
@@ -151,17 +176,25 @@ def clean_segment(row: tuple[str, ...], lookup: AgentLookup) -> tuple[str, ...]:
     if destination_normalized is None:
         reasons.append("unusable_to_number")
 
-    destination_label = "Other"
-    if destination_normalized is not None:
+    destination_label = "Unknown"
+    destination_type = "unknown"
+    voicemail = destination_normalized == "9999"
+    if voicemail:
+        destination_label = "Voicemail"
+        destination_type = "voicemail"
+    elif destination_normalized is not None:
         if destination_normalized in lookup.by_number:
-            destination_label = lookup.by_number[destination_normalized]
+            destination = lookup.by_number[destination_normalized]
+            destination_label = destination.display_name
+            destination_type = destination.destination_type
         elif len(destination_normalized) >= 4:
             candidates = lookup.by_extension.get(destination_normalized[-4:], frozenset())
             if len(candidates) == 1:
-                destination_label = next(iter(candidates))
+                destination = next(iter(candidates))
+                destination_label = destination.display_name
+                destination_type = destination.destination_type
             elif len(candidates) > 1:
                 reasons.append("ambiguous_destination_extension")
-    voicemail = destination_normalized == "9999"
     normalized_answered, known_answered = _normalized_answered(answered)
     if not known_answered:
         reasons.append("unknown_answered")
@@ -185,6 +218,7 @@ def clean_segment(row: tuple[str, ...], lookup: AgentLookup) -> tuple[str, ...]:
         source_normalized or "",
         destination_normalized or "",
         destination_label,
+        destination_type,
         str(voicemail),
         "False",
         str(bool(reasons)),

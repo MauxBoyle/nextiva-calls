@@ -35,9 +35,10 @@ def test_phone_normalization(display, expected):
     "content",
     [
         "number,agent\n5550100,Alex\n",
-        "phone_number,agent\n,Alex\n",
-        "phone_number,agent\n555-0100,\n",
-        "phone_number,agent\n555-0100,Alex\n5550100,Blair\n",
+        "phone_number,display_name,department,destination_type\n,Alex,Membership,agent\n",
+        "phone_number,display_name,department,destination_type\n555-0100,,Membership,agent\n",
+        "phone_number,display_name,department,destination_type\n555-0100,Alex,Membership,agent\n5550100,Blair,Membership,agent\n",
+        "phone_number,display_name,department,destination_type\n555-0100,Alex,Membership,hunt_group\n",
     ],
 )
 def test_lookup_rejects_invalid_content(tmp_path, content):
@@ -54,7 +55,7 @@ def raw_row(destination="555-0200", timestamp="Jan 2, 2026 9:30 AM", answered="Y
 def test_clean_segment_prefers_full_number_then_unique_extension_and_voicemail(tmp_path):
     lookup = make_lookup(
         tmp_path,
-        "phone_number,agent\n5550200,Full match\n12125550300,Extension match\n9999,Not voicemail\n",
+        "phone_number,display_name,department,destination_type\n5550200,Full match,Membership,agent\n12125550300,Extension match,Membership,agent\n9999,Not voicemail,All,agent\n",
     )
     full = clean_segment(raw_row("555-0200"), lookup)
     extension = clean_segment(raw_row("(212) 555-0300"), lookup)
@@ -62,14 +63,29 @@ def test_clean_segment_prefers_full_number_then_unique_extension_and_voicemail(t
     assert full[ANALYSIS_COLUMNS.index("destination_label")] == "Full match"
     assert extension[ANALYSIS_COLUMNS.index("destination_label")] == "Extension match"
     assert voicemail[ANALYSIS_COLUMNS.index("is_voicemail_destination")] == "True"
+    assert voicemail[ANALYSIS_COLUMNS.index("destination_type")] == "voicemail"
+
+
+def test_lookup_exposes_display_name_department_and_role(tmp_path):
+    lookup = make_lookup(
+        tmp_path,
+        "phone_number,display_name,department,destination_type\n5550200,Router,Membership,system\n",
+    )
+    destination = lookup.by_number["5550200"]
+    assert (destination.display_name, destination.department, destination.destination_type) == (
+        "Router",
+        "Membership",
+        "system",
+    )
 
 
 def test_clean_segment_marks_ambiguous_extensions_and_unknowns(tmp_path):
     lookup = make_lookup(
-        tmp_path, "phone_number,agent\n1115550200,Alex\n2225550200,Blair\n"
+        tmp_path, "phone_number,display_name,department,destination_type\n1115550200,Alex,Membership,agent\n2225550200,Blair,Membership,agent\n"
     )
     cleaned = clean_segment(raw_row("555-0200", "bad date", "maybe"), lookup)
-    assert cleaned[ANALYSIS_COLUMNS.index("destination_label")] == "Other"
+    assert cleaned[ANALYSIS_COLUMNS.index("destination_label")] == "Unknown"
+    assert cleaned[ANALYSIS_COLUMNS.index("destination_type")] == "unknown"
     assert cleaned[ANALYSIS_COLUMNS.index("is_anomaly")] == "True"
     assert cleaned[ANALYSIS_COLUMNS.index("anomaly_reasons")] == (
         "bad_timestamp;ambiguous_destination_extension;unknown_answered"
@@ -77,7 +93,7 @@ def test_clean_segment_marks_ambiguous_extensions_and_unknowns(tmp_path):
 
 
 def test_clean_segment_handles_dst_and_business_hour_boundaries(tmp_path):
-    lookup = make_lookup(tmp_path, "phone_number,agent\n5550200,Alex\n")
+    lookup = make_lookup(tmp_path, "phone_number,display_name,department,destination_type\n5550200,Alex,Membership,agent\n")
     cst = clean_segment(raw_row(timestamp="2026-01-02T15:00:00+00:00"), lookup)
     cdt = clean_segment(raw_row(timestamp="2026-07-02T14:00:00+00:00"), lookup)
     closing = clean_segment(raw_row(timestamp="2026-07-02 5:00 PM"), lookup)
@@ -90,12 +106,12 @@ def test_clean_segment_handles_dst_and_business_hour_boundaries(tmp_path):
 
 @pytest.mark.parametrize("closure", sorted(CLOSURE_DATES_2026))
 def test_closures_are_holidays_and_not_business_hours(tmp_path, closure):
-    lookup = make_lookup(tmp_path, "phone_number,agent\n5550200,Alex\n")
+    lookup = make_lookup(tmp_path, "phone_number,display_name,department,destination_type\n5550200,Alex,Membership,agent\n")
     cleaned = clean_segment(raw_row(timestamp=f"{closure} 10:00 AM"), lookup)
     assert cleaned[ANALYSIS_COLUMNS.index("is_holiday")] == "True"
     assert cleaned[ANALYSIS_COLUMNS.index("is_business_hours")] == "False"
 
 
 def test_analysis_header_is_csv_safe():
-    assert len(ANALYSIS_COLUMNS) == 17
+    assert len(ANALYSIS_COLUMNS) == 18
     assert list(csv.reader([",".join(ANALYSIS_COLUMNS)]))[0] == list(ANALYSIS_COLUMNS)

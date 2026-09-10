@@ -19,7 +19,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `EMAIL_USERNAME` | Yes | — | Gmail address |
 | `EMAIL_APP_PASSWORD` | Yes | — | Google app password |
 | `NEXTIVA_EMAIL_SUBJECT` | Yes | — | Exact decoded subject |
-| `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | `phone_number,agent` destination lookup CSV |
+| `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | Role-aware destination lookup CSV |
 | `EMAIL_IMAP_SERVER` | No | `imap.gmail.com` | IMAP hostname |
 | `NEXTIVA_EMAIL_SENDER` | No | `analytics@nextiva.com` | Exact sender address |
 | `NEXTIVA_ALLOWED_HOSTS` | No | `ct.nextiva.com` | Comma-separated exact HTTPS hosts |
@@ -112,15 +112,17 @@ Name,Time of Call,Duration,Direction,Answered,From,To
 rebuilt with an atomic replacement; it preserves first-seen order and omits exact
 whitespace-normalized duplicate rows already present in raw data. Its header is
 the seven raw columns plus `call_timestamp_ct`, `from_number_normalized`,
-`to_number_normalized`, `destination_label`, `is_voicemail_destination`,
+`to_number_normalized`, `destination_label`, `destination_type`, `is_voicemail_destination`,
 `is_duplicate`, `is_anomaly`, `anomaly_reasons`, `is_business_hours`, and
 `is_holiday`. Booleans are written as `True`/`False`.
 
-The lookup CSV is required and must have exactly `phone_number,agent` headers,
-valid nonblank values, and no conflicting full-number mappings. Analysis phone
+The lookup CSV is required and must have exactly
+`phone_number,display_name,department,destination_type` headers. Values are
+nonblank, types are `agent` or `system`, and conflicting full-number mappings
+are rejected. Analysis phone
 numbers are digits-only and never shortened. Destinations match full lookup
-numbers before uniquely mapped final-four extensions; otherwise their label is
-`Other`. `9999` is voicemail regardless of lookup label. Naive timestamps use
+numbers before uniquely mapped final-four extensions; otherwise their type is
+`unknown`. `9999` is voicemail regardless of lookup label. Naive timestamps use
 `America/Chicago`; offset-aware timestamps are converted to it. Business hours
 are weekdays from 9:00 AM inclusive through 5:00 PM exclusive CT, excluding the
 2026 closures Jan 1, Jan 19, Feb 16, May 25, Jun 19, Jul 3, Sep 7, Oct 12, Nov
@@ -144,11 +146,12 @@ makes that segment a standalone `Unknown` candidate, which guarantees one and
 only one candidate contains each duplicate-free segment.
 
 Candidate rows contain a hashed ID, segment fingerprints, routing mode, ordered
-unique offered destinations (including `9999` voicemail), possible non-voicemail
-answer destinations, maximum duration, outcome, and conflicts. Voicemail is
-never treated as an agent answer. If voicemail and a non-voicemail positive
-answer appear together, the outcome is `Ambiguous` and the conflict is flagged.
-Multiple plausible agent answers are retained instead of choosing one.
+unique offered destinations and role-aware evidence columns:
+`offered_agent_destinations`, `confirmed_answered_agent_destinations`,
+`forwarded_destinations`, `system_routing_destinations`, `reached_voicemail`,
+and `unknown_answered_destinations`. Voicemail is never an agent answer. Outcomes
+separate confirmed agent answers, system/unattributed connections, routing-only,
+voicemail, unanswered, unknown, and ambiguous calls.
 
 The default assumption is that `Membership` changed from sequential to
 simultaneous ringing at midnight Central Time on August 15, 2026, inclusive.
