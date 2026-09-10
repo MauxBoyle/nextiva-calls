@@ -25,7 +25,7 @@ def test_groups_segments_and_assigns_every_segment_once():
 def test_evidence_is_ordered_and_duplicate_free():
     row = candidate(segment(destination="15550200", answered="Yes"), segment(destination="15550200", answered="Yes"), segment(destination="15550300", answered="No"), segment(destination="15550400", answered="Yes - Forwarded"), segment(destination="15550500", destination_type="system"))
     assert value(row, "offered_destinations") == "15550200;15550300;15550400;15550500"
-    assert value(row, "offered_agent_destinations") == "15550200;15550300"
+    assert value(row, "offered_agent_destinations") == "15550200;15550300;15550400"
     assert value(row, "confirmed_answered_agent_destinations") == "15550200"
     assert value(row, "forwarded_destinations") == "15550400"
     assert value(row, "system_routing_destinations") == "15550500"

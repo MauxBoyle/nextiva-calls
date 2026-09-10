@@ -40,6 +40,24 @@ def test_membership_scope_uses_agent_evidence_not_system_or_voicemail(tmp_path):
     assert OTHER not in summary.agents
 
 
+def test_forwarded_known_agent_is_selected_and_counts_as_an_offer(tmp_path):
+    rows = [
+        row(
+            hunt_group="Support",
+            offered_agent_destinations="15550101",
+            confirmed_answered_agent_destinations="",
+            forwarded_destinations="15550101",
+            outcome="Forwarded / routing only",
+        )
+    ]
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+    assert summary.calls == 1
+    assert summary.routing_attempts == 1
+    assert summary.agents["Alex"]["offers"] == 1
+    assert summary.agents["Alex"].get("answers", 0) == 0
+    assert summary.outcomes["Forwarded / routing only"] == 1
+
+
 def test_only_confirmed_agent_evidence_receives_answer_credit(tmp_path):
     rows = [
         row(),

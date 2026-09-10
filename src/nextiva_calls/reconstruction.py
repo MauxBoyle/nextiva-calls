@@ -114,7 +114,6 @@ def reconstruct_calls(
             segment["to_number_normalized"]
             for segment, _ in segments
             if segment["destination_type"] == "agent"
-            and segment["Answered"] in {"Yes", "No"}
             and segment["to_number_normalized"]
         )
         confirmed_agents = _unique(
