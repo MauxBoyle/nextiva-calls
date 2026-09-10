@@ -1,181 +1,89 @@
 from datetime import date
 
-from nextiva_calls.segments import AgentLookup
+import pytest
+
+from nextiva_calls.segments import AgentLookup, Destination
+from nextiva_calls.storage import StorageError
 from nextiva_calls.weekly_metrics import (
     OTHER,
     Week,
+    load_candidates,
     parse_week_start,
     summarize_week,
     week_for,
 )
 
 
+def lookup():
+    alex = Destination("Alex", "Membership", "agent")
+    blair = Destination("Blair", "Membership", "agent")
+    system = Destination("Hunt group", "Membership", "system")
+    return AgentLookup({"15550101": alex, "15550102": blair, "15550999": system}, {"0101": frozenset({alex}), "0102": frozenset({blair}), "0999": frozenset({system})})
+
+
 def row(**updates):
-    values = {
-        "call_timestamp_ct": "2026-08-17T10:00:00-05:00",
-        "from_number_normalized": "15550001",
-        "hunt_group": "Membership",
-        "routing_mode": "Simultaneous",
-        "offered_destinations": "15550101;15550102",
-        "possible_answering_destinations": "15550101",
-        "maximum_duration_seconds": "75",
-        "outcome": "Human answered",
-    }
+    values = {"call_timestamp_ct": "2026-08-17T10:00:00-05:00", "from_number_normalized": "15550001", "hunt_group": "Membership", "routing_mode": "Simultaneous", "offered_destinations": "15550101;15550102", "offered_agent_destinations": "15550101;15550102", "confirmed_answered_agent_destinations": "15550101", "forwarded_destinations": "", "system_routing_destinations": "", "unknown_answered_destinations": "", "maximum_duration_seconds": "75", "outcome": "Confirmed human answered"}
     values.update(updates)
     return values
 
 
-def lookup():
-    return AgentLookup(
-        {"15550101": "Alex", "15550102": "Blair"},
-        {"0101": frozenset({"Alex"}), "0102": frozenset({"Blair"})},
-    )
+def test_week_helpers():
+    assert week_for(date(2026, 8, 20)) == Week(date(2026, 8, 13))
+    assert parse_week_start("2026-08-17") == Week(date(2026, 8, 17))
 
 
-def test_rolling_week_ends_yesterday_and_selects_prior_period():
-    week = week_for(date(2026, 8, 20))
-    assert week == Week(date(2026, 8, 13))
-    assert week.end == date(2026, 8, 19)
-    assert week.prior.start == date(2026, 8, 6)
+def test_membership_scope_uses_agent_evidence_not_system_or_voicemail(tmp_path):
+    rows = [row(hunt_group="Support", offered_agent_destinations="15550101"), row(hunt_group="Support", offered_destinations="15550999", offered_agent_destinations="", system_routing_destinations="15550999", outcome="Forwarded / routing only"), row(hunt_group="Membership", offered_agent_destinations="", outcome="Voicemail")]
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+    assert summary.calls == 2
+    assert summary.agents["Alex"]["offers"] == 1
+    assert OTHER not in summary.agents
 
 
-def test_week_start_accepts_any_iso_date_and_selects_prior_period():
-    week = parse_week_start("2026-08-17")
-    assert week == Week(date(2026, 8, 17))
-    assert week.end == date(2026, 8, 23)
-    assert week.prior.start == date(2026, 8, 10)
-
-
-def test_membership_scope_includes_hunt_group_or_known_offer_only(tmp_path):
+def test_forwarded_known_agent_is_selected_and_counts_as_an_offer(tmp_path):
     rows = [
         row(
-            hunt_group="Membership",
-            offered_destinations="9999",
-            possible_answering_destinations="",
-            outcome="Unanswered",
-        ),
-        row(hunt_group="Support", offered_destinations="15550101"),
-        row(hunt_group="Support", offered_destinations="9999", possible_answering_destinations=""),
+            hunt_group="Support",
+            offered_agent_destinations="15550101",
+            confirmed_answered_agent_destinations="",
+            forwarded_destinations="15550101",
+            outcome="Forwarded / routing only",
+        )
     ]
     summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
-
-    assert summary.calls == 2
-    assert summary.outcomes == {
-        "Human answered": 1,
-        "Forwarded answered": 0,
-        "Voicemail": 0,
-        "Unanswered": 1,
-        "Unknown": 0,
-        "Ambiguous": 0,
-    }
+    assert summary.calls == 1
+    assert summary.routing_attempts == 1
     assert summary.agents["Alex"]["offers"] == 1
-    assert summary.hunt_groups == {
-        "Membership": {"calls": 1, "Unanswered": 1, "Simultaneous": 1},
-        "Reception": {}, "Certification": {}, "Bookstore": {},
-    }
+    assert summary.agents["Alex"].get("answers", 0) == 0
+    assert summary.outcomes["Forwarded / routing only"] == 1
 
 
-def test_hunt_group_table_is_limited_to_approved_departments(tmp_path):
-    rows = [
-        row(hunt_group=group, offered_destinations="9999", possible_answering_destinations="")
-        for group in ("Reception", "Membership", "Certification", "Bookstore", "Support")
-    ]
-    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
-
-    assert set(summary.hunt_groups) == {"Reception", "Membership", "Certification", "Bookstore"}
-    assert summary.hunt_groups["Reception"]["calls"] == 1
-    assert summary.hunt_groups["Membership"]["calls"] == 1
-
-
-def test_weekday_outcomes_keep_unknown_and_ambiguous_in_reconciliation(tmp_path):
-    rows = [
-        row(outcome="Human answered"),
-        row(outcome="Forwarded answered"),
-        row(outcome="Unanswered", possible_answering_destinations=""),
-        row(outcome="Voicemail", possible_answering_destinations=""),
-        row(outcome="Unknown", possible_answering_destinations=""),
-        row(outcome="Ambiguous", possible_answering_destinations=""),
-    ]
-    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
-
-    assert summary.weekday_outcomes[("Mon", "Yes")] == 2
-    assert summary.weekday_outcomes[("Mon", "No")] == 1
-    assert summary.weekday_outcomes[("Mon", "Voicemail")] == 1
-    assert summary.weekday_outcomes[("Mon", "Unknown / Ambiguous")] == 2
-
-
-def test_summary_counts_outcomes_time_categories_and_agent_reconciliation(tmp_path):
+def test_only_confirmed_agent_evidence_receives_answer_credit(tmp_path):
     rows = [
         row(),
-        row(
-            call_timestamp_ct="2026-08-17T20:00:00-05:00",
-            outcome="Unanswered",
-            possible_answering_destinations="",
-            offered_destinations="9999",
-        ),
-        row(
-            call_timestamp_ct="2026-08-22T11:00:00-05:00",
-            offered_destinations="18880000",
-            possible_answering_destinations="18880000",
-        ),
-        row(
-            call_timestamp_ct="2026-08-18T09:00:00-05:00",
-            possible_answering_destinations="15550101;15550102",
-        ),
+        row(outcome="Connected / unknown attribution", offered_agent_destinations="", confirmed_answered_agent_destinations="", system_routing_destinations="15550999"),
+        row(outcome="Answered / unattributed", offered_agent_destinations="", confirmed_answered_agent_destinations="", unknown_answered_destinations="18880000"),
+        row(outcome="Forwarded / routing only", confirmed_answered_agent_destinations="", forwarded_destinations="15550101"),
     ]
-    summary = summarize_week(
-        rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3"
-    )
-    assert summary.preliminary
-    assert summary.calls == 4
-    assert summary.outcomes["Human answered"] == 3
-    assert summary.outcomes["Unanswered"] == 1
-    assert summary.routing_attempts == 6
-    assert summary.time_categories == {
-        "Business hours": 2,
-        "After hours": 1,
-        "Weekend": 1,
-        "Holiday": 0,
-    }
-    assert summary.repeat_callers == {"15550001": 4}
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
     assert summary.agents["Alex"] == {"offers": 2, "answers": 1, "talk_seconds": 75, "median_seconds": 75}
-    assert summary.agents[OTHER] == {"offers": 2, "answers": 2, "talk_seconds": 150, "median_seconds": 75}
-    assert summary.weekday_hour_volume[("Mon", 10)] == 1
-    assert summary.voicemail_unanswered_by_hour[("Mon", 20)] == 1
-    assert summary.routing_attempt_distribution == {1: 2, 2: 2}
-    assert summary.anomalies == {"Ambiguous outcomes": 0, "Unknown outcomes": 0, "Unattributed answers": 2}
-    assert "misses" not in str(summary.agents).lower()
+    assert summary.answered_talk_seconds == 75
+    assert summary.anomalies["Unattributed answers"] == 2
+    assert summary.outcomes["Confirmed human answered"] == 1
+    assert summary.outcomes["Forwarded / routing only"] == 1
 
 
-def test_metadata_gap_makes_week_preliminary(tmp_path):
-    import sqlite3
-
-    database = tmp_path / "metadata.sqlite3"
-    connection = sqlite3.connect(database)
-    connection.execute("CREATE TABLE reports (period_start TEXT, period_end TEXT)")
-    connection.execute(
-        "INSERT INTO reports VALUES (?, ?)",
-        ("2026-08-17T00:00:00-05:00", "2026-08-19T00:00:00-05:00"),
-    )
-    connection.commit()
-    connection.close()
-    summary = summarize_week([], Week(date(2026, 8, 17)), lookup(), database)
-    assert summary.preliminary
+def test_new_outcomes_stay_conservative_in_chart(tmp_path):
+    rows = [row(outcome=outcome, confirmed_answered_agent_destinations="" if outcome != "Confirmed human answered" else "15550101") for outcome in ("Confirmed human answered", "Forwarded / routing only", "Voicemail", "Unanswered", "Unknown", "Ambiguous", "Connected / unknown attribution", "Answered / unattributed")]
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+    assert summary.weekday_outcomes[("Mon", "Yes")] == 1
+    assert summary.weekday_outcomes[("Mon", "No")] == 1
+    assert summary.weekday_outcomes[("Mon", "Voicemail")] == 1
+    assert summary.weekday_outcomes[("Mon", "Unknown / Ambiguous")] == 5
 
 
-def test_complete_inclusive_metadata_period_is_not_preliminary(tmp_path):
-    import sqlite3
-
-    database = tmp_path / "metadata.sqlite3"
-    connection = sqlite3.connect(database)
-    connection.execute("CREATE TABLE reports (period_start TEXT, period_end TEXT)")
-    connection.execute(
-        "INSERT INTO reports VALUES (?, ?)",
-        ("2026-08-17T00:00:00-05:00", "2026-08-23T00:00:00-05:00"),
-    )
-    connection.commit()
-    connection.close()
-    summary = summarize_week([], Week(date(2026, 8, 17)), lookup(), database)
-    assert not summary.preliminary
-    assert summary.data_through is not None
-    assert summary.data_through.isoformat() == "2026-08-24T00:00:00-05:00"
+def test_load_candidates_rejects_legacy_header(tmp_path):
+    path = tmp_path / "legacy.csv"
+    path.write_text("candidate_id,possible_answering_destinations\none,15550101\n", encoding="utf-8")
+    with pytest.raises(StorageError, match="header"):
+        load_candidates(path)

@@ -3,7 +3,7 @@ from datetime import date
 
 from nextiva_calls import app
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
-from nextiva_calls.segments import AgentLookup
+from nextiva_calls.segments import AgentLookup, Destination
 from nextiva_calls.weekly_metrics import Week, summarize_week
 from nextiva_calls.weekly_report import StackedBarChart, render_weekly_report
 
@@ -13,7 +13,7 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
     candidates = raw.with_suffix(".candidate-calls.csv")
     lookup = tmp_path / "agents.csv"
     output = tmp_path / "manager.pdf"
-    lookup.write_text("phone_number,agent\n15550101,Alex\n", encoding="utf-8")
+    lookup.write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
     values = {column: "" for column in CANDIDATE_COLUMNS}
     values.update(
         {
@@ -24,10 +24,11 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
             "routing_mode": "Sequential",
             "offered_destinations": "15550101",
             "unique_routing_attempts": "1",
-            "possible_answering_destinations": "15550101",
+            "offered_agent_destinations": "15550101",
+            "confirmed_answered_agent_destinations": "15550101",
             "maximum_duration_seconds": "60",
             "segment_count": "1",
-            "outcome": "Human answered",
+            "outcome": "Confirmed human answered",
         }
     )
     with candidates.open("w", newline="", encoding="utf-8") as stream:
@@ -47,7 +48,7 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
     assert b"PRELIMINARY" in content
     assert b"Aug 17, 2026" in content
     assert b"Membership candidate calls" in content
-    assert b"% Human answered" in content
+    assert b"% confirmed human answered" in content
     assert b"15550001" not in content
     assert b"15550101" not in content
     assert content.count(b"/Type /Page\n") == 3
@@ -58,7 +59,7 @@ def test_weekly_report_uses_dashboard_default_filename(monkeypatch, tmp_path):
     raw = tmp_path / "calls.csv"
     candidates = raw.with_suffix(".candidate-calls.csv")
     lookup = tmp_path / "agents.csv"
-    lookup.write_text("phone_number,agent\n15550101,Alex\n", encoding="utf-8")
+    lookup.write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
     with candidates.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
         writer.writeheader()
@@ -72,7 +73,7 @@ def test_weekly_report_default_uses_complete_days_ending_yesterday(monkeypatch, 
     monkeypatch.chdir(tmp_path)
     raw = tmp_path / "calls.csv"
     lookup = tmp_path / "agents.csv"
-    lookup.write_text("phone_number,agent\n15550101,Alex\n", encoding="utf-8")
+    lookup.write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
     with raw.with_suffix(".candidate-calls.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
         writer.writeheader()
@@ -93,13 +94,15 @@ def test_agent_dashboard_limits_named_agents_to_top_five(tmp_path):
             {
                 "call_timestamp_ct": "2026-08-17T10:00:00-05:00",
                 "offered_destinations": number,
-                "possible_answering_destinations": number,
+                "offered_agent_destinations": number,
+                "confirmed_answered_agent_destinations": number,
                 "maximum_duration_seconds": "60",
-                "outcome": "Human answered",
+                "outcome": "Confirmed human answered",
             }
         )
         rows.append(values)
-    lookup = AgentLookup(numbers, {number[-4:]: frozenset({agent}) for number, agent in numbers.items()})
+    destinations = {number: Destination(agent, "Membership", "agent") for number, agent in numbers.items()}
+    lookup = AgentLookup(destinations, {number[-4:]: frozenset({destination}) for number, destination in destinations.items()})
     summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup, tmp_path / "missing.sqlite3")
     output = tmp_path / "agents.pdf"
     render_weekly_report(summary, summary, output)
@@ -118,7 +121,7 @@ def test_daily_outcome_chart_uses_reporting_period_order(tmp_path):
 
 def test_weekly_report_accepts_non_monday(monkeypatch, tmp_path):
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(tmp_path / "agents.csv"))
-    (tmp_path / "agents.csv").write_text("phone_number,agent\n15550101,Alex\n", encoding="utf-8")
+    (tmp_path / "agents.csv").write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
     raw = tmp_path / "calls.csv"
     with raw.with_suffix(".candidate-calls.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)

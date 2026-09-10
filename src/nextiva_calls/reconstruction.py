@@ -18,7 +18,12 @@ CANDIDATE_COLUMNS = (
     "routing_mode",
     "offered_destinations",
     "unique_routing_attempts",
-    "possible_answering_destinations",
+    "offered_agent_destinations",
+    "confirmed_answered_agent_destinations",
+    "forwarded_destinations",
+    "system_routing_destinations",
+    "reached_voicemail",
+    "unknown_answered_destinations",
     "maximum_duration_seconds",
     "segment_count",
     "outcome",
@@ -105,39 +110,68 @@ def reconstruct_calls(
         fingerprints = [fingerprint for _, fingerprint in segments]
         candidate_id = "candidate_" + _fingerprint(key + tuple(fingerprints))[:20]
         destinations = _unique(segment["to_number_normalized"] for segment, _ in segments)
-        positive = _unique(
+        offered_agents = _unique(
+            segment["to_number_normalized"]
+            for segment, _ in segments
+            if segment["destination_type"] == "agent"
+            and segment["to_number_normalized"]
+        )
+        confirmed_agents = _unique(
+            segment["to_number_normalized"]
+            for segment, _ in segments
+            if segment["destination_type"] == "agent"
+            and segment["Answered"] == "Yes"
+            and segment["to_number_normalized"]
+        )
+        forwarded = _unique(
             segment["to_number_normalized"]
             for segment, _ in segments
             if segment["is_voicemail_destination"] != "True"
-            and segment["Answered"] in {"Yes", "Yes - Forwarded"}
+            and segment["Answered"] == "Yes - Forwarded"
             and segment["to_number_normalized"]
         )
-        normal_positive = any(
-            segment["is_voicemail_destination"] != "True" and segment["Answered"] == "Yes"
+        system_routing = _unique(
+            segment["to_number_normalized"]
             for segment, _ in segments
+            if segment["destination_type"] == "system"
+            and segment["to_number_normalized"]
         )
-        forwarded_positive = any(
-            segment["is_voicemail_destination"] != "True"
-            and segment["Answered"] == "Yes - Forwarded"
+        unknown_answered = _unique(
+            segment["to_number_normalized"]
             for segment, _ in segments
+            if segment["destination_type"] == "unknown"
+            and segment["Answered"] == "Yes"
+            and segment["to_number_normalized"]
         )
         has_voicemail = any(
             segment["is_voicemail_destination"] == "True" for segment, _ in segments
+        )
+        system_answered = any(
+            segment["destination_type"] == "system" and segment["Answered"] == "Yes"
+            for segment, _ in segments
+        )
+        affirmative_non_voicemail = bool(
+            confirmed_agents or system_answered or unknown_answered or forwarded
         )
         known_negative_only = bool(segments) and all(
             segment["Answered"] == "No"
             and not segment["anomaly_reasons"]
             and bool(segment["to_number_normalized"])
+            and segment["destination_type"] == "agent"
             for segment, _ in segments
         )
         if not known:
             outcome, conflicts = "Unknown", ""
-        elif has_voicemail and positive:
+        elif has_voicemail and affirmative_non_voicemail:
             outcome, conflicts = "Ambiguous", "voicemail_and_non_voicemail_answer"
-        elif normal_positive:
-            outcome, conflicts = "Human answered", ""
-        elif forwarded_positive:
-            outcome, conflicts = "Forwarded answered", ""
+        elif confirmed_agents:
+            outcome, conflicts = "Confirmed human answered", ""
+        elif system_answered:
+            outcome, conflicts = "Connected / unknown attribution", ""
+        elif unknown_answered:
+            outcome, conflicts = "Answered / unattributed", ""
+        elif forwarded or system_routing:
+            outcome, conflicts = "Forwarded / routing only", ""
         elif has_voicemail:
             outcome, conflicts = "Voicemail", ""
         elif known_negative_only:
@@ -159,7 +193,12 @@ def reconstruct_calls(
                 _routing_mode(hunt_group, timestamp, membership_hunt_group, simultaneous_from),
                 ";".join(destinations),
                 str(len(destinations)),
-                ";".join(positive),
+                ";".join(offered_agents),
+                ";".join(confirmed_agents),
+                ";".join(forwarded),
+                ";".join(system_routing),
+                str(has_voicemail),
+                ";".join(unknown_answered),
                 str(max(durations, default=0)),
                 str(len(segments)),
                 outcome,

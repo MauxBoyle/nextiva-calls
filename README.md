@@ -64,8 +64,9 @@ cp .env.example .env
 
 - Required: `EMAIL_USERNAME`, `EMAIL_APP_PASSWORD`, `NEXTIVA_EMAIL_SUBJECT` (an
   exact subject match), and `NEXTIVA_AGENT_LOOKUP_FILE`. The lookup is an
-  externally supplied CSV with exactly `phone_number,agent` headers. It must have
-  nonblank values, valid phone formatting, and no number mapped to two agents.
+  externally supplied CSV with exactly `phone_number`, `display_name`,
+  `department`, and `destination_type` headers. Types are `agent` or `system`;
+  values must be nonblank, phone values valid, and mappings non-conflicting.
 - Mail defaults: `EMAIL_IMAP_SERVER=imap.gmail.com` and
   `NEXTIVA_EMAIL_SENDER=analytics@nextiva.com`.
 - Security and timing defaults: `NEXTIVA_ALLOWED_HOSTS=ct.nextiva.com` and
@@ -97,15 +98,15 @@ CSV is append-only: it retains the first imported copy of each call row. The
 analysis CSV is generated atomically from it and removes repeated whitespace-
 normalized rows while keeping first-seen order. Its columns are the seven raw
 columns followed by `call_timestamp_ct`, `from_number_normalized`,
-`to_number_normalized`, `destination_label`, `is_voicemail_destination`,
+`to_number_normalized`, `destination_label`, `destination_type`, `is_voicemail_destination`,
 `is_duplicate`, `is_anomaly`, `anomaly_reasons`, `is_business_hours`, and
 `is_holiday`. Boolean values are `True` or `False`; admitted analysis rows always
 have `is_duplicate=False`.
 
 Phone values in analysis are digits-only without shortening either side. A
 destination first matches its complete normalized lookup number, then a uniquely
-mapped final four digits; unmatched destinations are `Other`. `9999` is always a
-voicemail destination. Naive timestamps are interpreted in `America/Chicago`,
+mapped final four digits; unmatched or ambiguous destinations are `unknown`.
+`9999` is always voicemail, regardless of its lookup row. Naive timestamps are interpreted in `America/Chicago`,
 and offset-aware timestamps are converted there. Bad timestamps, unusable phone
 values, ambiguous final-four matches, and unfamiliar Answered values remain in
 analysis and are documented in `anomaly_reasons`.
@@ -115,17 +116,18 @@ duplicate-free segments by `Name`, Central-time timestamp, and normalized `From`
 number. A row missing any of those values becomes its own `Unknown` candidate so
 no segment is discarded or guessed into another call. Candidate rows keep a
 stable hashed ID and their segment fingerprints for review. They include the
-ordered unique destinations offered (including voicemail `9999`), possible
-non-voicemail answer destinations, maximum duration, routing mode, outcome, and
-any voicemail/answer conflict. `9999` is an offered destination but never an
-agent answer. See the versioned [20-row review template](docs/candidate-call-validation-checklist-v1.csv).
+ordered unique destinations offered (including voicemail `9999`) and separate,
+ordered duplicate-free evidence for offered agents, confirmed agent answers,
+forwarding, system routing, voicemail reached, and unknown ordinary-Yes answers.
+They also retain maximum duration, routing mode, outcome, and conflicts. `9999`
+is never an agent answer. See the versioned [20-row review template](docs/candidate-call-validation-checklist-v1.csv).
 
-Outcomes are inferred in this order: voicemail plus a non-voicemail positive
-answer is `Ambiguous`; a normal positive answer is `Human answered`; a forwarded
-positive answer only is `Forwarded answered`; voicemail alone is `Voicemail`;
-known negative evidence only is `Unanswered`; otherwise the result is `Unknown`.
-When multiple positive non-voicemail destinations exist, all remain listed as
-possible answers rather than selecting one.
+Outcomes are conservative: voicemail plus non-voicemail affirmative evidence is
+`Ambiguous`; ordinary `Yes` to an agent is `Confirmed human answered`; to a
+system is `Connected / unknown attribution`; unknown attribution is `Answered /
+unattributed`; forwarding or system routing alone is `Forwarded / routing only`;
+then `Voicemail`, `Unanswered`, or `Unknown`. Invalid and conflicting data never
+becomes a human answer.
 
 Business hours are Monday through Friday from 9:00 AM (inclusive) to 5:00 PM
 (exclusive), Central Time, excluding 2026 closures: Jan 1, Jan 19, Feb 16, May
@@ -168,10 +170,10 @@ It deliberately does not make outbound, speed-of-answer, wait-time, or “agent
 miss” claims, and it never displays customer or agent phone numbers.
 
 The agent lookup used when generating the report is authoritative at report time.
-Every offered destination is counted as an offer. An answer is credited to a
-named agent only when exactly one known agent is the sole possible answer
-destination. Untracked destinations and non-unique possible answers appear as
-`Other / Unattributed`, so reconciliation does not silently discard them.
+Only agent-role destinations count as named-agent offers. Only confirmed
+answered-agent evidence receives named-agent answer credit; system routing,
+forwarding, voicemail, and unattributed evidence remain visible through their
+outcomes and anomaly counts.
 
 A week is marked **PRELIMINARY** unless valid report-period metadata in
 `NEXTIVA_METADATA_FILE` continuously covers the entire week. Missing, invalid,
