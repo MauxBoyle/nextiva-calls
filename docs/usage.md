@@ -48,7 +48,7 @@ uv run --env-file .env python -m nextiva_calls
 
 ## Weekly manager report
 
-Create a Membership PDF comparing the seven complete Central-time days ending
+Create a Membership + Certification PDF comparing the seven complete Central-time days ending
 yesterday with the preceding seven days:
 
 ```bash
@@ -61,23 +61,28 @@ seven-day historical period. The default output is the printable three-page Lett
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
 elsewhere.
 
-Membership metrics include calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP` plus calls
-that offer an exact lookup phone-number match or a uniquely mapped final-four
-extension. Every Membership-scoped call is in the headline denominator,
-including after-hours, weekend, holiday, and voicemail-only calls. Other calls
-do not affect Membership outcomes, coverage, heatmaps, routing, or agent
-metrics. The hunt-group table is the exception: it compares
+Headline metrics, business-hours coverage, and the heatmap include the combined
+union of calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP`, the literal `Certification`
+hunt group, and calls that offer an exact lookup phone-number match or a uniquely
+mapped final-four extension for a Membership or Certification agent. A call that
+matches both departments counts once in these combined totals. Every scoped call
+is in the headline denominator, including after-hours, weekend, holiday, and
+voicemail-only calls. The hunt-group table is the exception: it compares
 all in-period candidates limited to Reception, Membership, Certification, and
 Bookstore.
 
-The PDF includes period, data-through, and generation timestamps; a stacked
-weekday outcome chart, durations, routing attempts, coverage, hunt groups, and
-weekday/hour views. The chart's `Yes` bucket contains only `Confirmed human
+The PDF includes period, data-through, and generation timestamps; separate
+Membership and Certification daily outcome charts and reconciliation tables,
+plus combined coverage, routing, hunt groups, and weekday/hour views. Outcome
+detail is omitted when a department has no calls; a cross-department call appears
+in both matching department outcome views. The chart's `Yes` bucket contains only `Confirmed human
 answered`; forwarding or routing-only activity does not count as an answer. It
 shows forwarded/routing-only, voicemail, connected/unknown attribution,
 answered/unattributed, ambiguous, unknown, and unanswered outcomes separately.
 The chart has `No` (unanswered) and `Voicemail` segments, adding `Unknown /
-Ambiguous` only when needed for accurate totals. Its manager-only agent table shows every
+Ambiguous` only when needed for accurate totals. Its manager-only agent table shows only
+Membership and Certification lookup agents; other departments, system routing,
+and voicemail never create agent-level attribution. It shows every
 lookup-listed agent, excluding hunt groups, voicemail, and `Other / Unattributed`. Attribution coverage is
 `confirmed known-agent answers / connected calls`, where connected calls are
 confirmed human answers plus `Connected / unknown attribution`, `Answered /

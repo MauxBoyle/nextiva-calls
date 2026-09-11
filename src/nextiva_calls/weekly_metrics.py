@@ -27,6 +27,8 @@ OUTCOMES = (
 OTHER = "Other / Unattributed"
 HUNT_GROUPS = ("Reception", "Membership", "Certification", "Bookstore")
 OUTCOME_BUCKETS = ("Yes", "No", "Voicemail", "Unknown / Ambiguous")
+REPORTING_DEPARTMENTS = ("Membership", "Certification")
+COMBINED_SCOPE = "combined"
 
 
 @dataclass(frozen=True)
@@ -140,15 +142,50 @@ def _category(when: datetime) -> str:
 
 
 def _agent_for(destination: str, lookup: AgentLookup) -> str | None:
+    found = _agent_destination(destination, lookup)
+    return found.display_name if found is not None else None
+
+
+def _agent_destination(destination: str, lookup: AgentLookup):
+    """Return an unambiguous agent lookup entry for a destination."""
     if destination in lookup.by_number:
         found = lookup.by_number[destination]
-        return found.display_name if found.destination_type == "agent" else None
+        return found if found.destination_type == "agent" else None
     if len(destination) >= 4:
         matches = lookup.by_extension.get(destination[-4:], frozenset())
         if len(matches) == 1:
             found = next(iter(matches))
-            return found.display_name if found.destination_type == "agent" else None
+            return found if found.destination_type == "agent" else None
     return None
+
+
+def _scope_departments(scope: str) -> tuple[str, ...]:
+    """Return the approved departments represented by a report scope."""
+    normalized = scope.casefold()
+    if normalized == COMBINED_SCOPE:
+        return REPORTING_DEPARTMENTS
+    for department in REPORTING_DEPARTMENTS:
+        if normalized == department.casefold():
+            return (department,)
+    raise ValueError("weekly report scope must be combined, Membership, or Certification")
+
+
+def _matches_scope(
+    row: dict[str, str], lookup: AgentLookup, departments: tuple[str, ...], membership_hunt_group: str
+) -> bool:
+    """Whether a call is in a department scope through a group or offered agent."""
+    hunt_groups = {
+        membership_hunt_group if department == "Membership" else department
+        for department in departments
+    }
+    if row.get("hunt_group") in hunt_groups:
+        return True
+    return any(
+        (agent := _agent_destination(destination, lookup)) is not None
+        and agent.department in departments
+        for destination in row.get("offered_agent_destinations", "").split(";")
+        if destination
+    )
 
 
 def _duration(row: dict[str, str]) -> int:
@@ -252,8 +289,14 @@ def summarize_week(
     lookup: AgentLookup,
     metadata_path: Path,
     membership_hunt_group: str = "Membership",
+    scope: str = "Membership",
 ) -> WeeklySummary:
-    """Summarize Membership candidates in one Central-time seven-day period."""
+    """Summarize one approved department scope in a Central-time week.
+
+    ``combined`` is a union, so a call that touches both departments is counted
+    once. Individual department summaries intentionally include that same call.
+    """
+    departments = _scope_departments(scope)
     in_period = [
         (row, when)
         for row in candidates
@@ -263,12 +306,7 @@ def summarize_week(
     selected = [
         (row, when)
         for row, when in in_period
-        if row.get("hunt_group") == membership_hunt_group
-        or any(
-            _agent_for(destination, lookup) is not None
-            for destination in row.get("offered_agent_destinations", "").split(";")
-            if destination
-        )
+        if _matches_scope(row, lookup, departments, membership_hunt_group)
     ]
     outcomes = Counter(
         row.get("outcome", "Unknown")
@@ -306,11 +344,11 @@ def summarize_week(
     )
     durations = [_duration(row) for row, _ in selected]
     groups: dict[str, Counter[str]] = {group: Counter() for group in HUNT_GROUPS}
-    # Start with every lookup-listed person. This makes zero recorded offers
-    # visible in the manager report instead of silently omitting that agent.
+    # Start with approved lookup-listed people. This both retains zero-offer
+    # agents and prevents other departments from producing attribution data.
     agents: defaultdict[str, Counter[str]] = defaultdict(Counter)
     for destination in lookup.by_number.values():
-        if destination.destination_type == "agent":
+        if destination.destination_type == "agent" and destination.department in departments:
             agents[destination.display_name]
     attempts = 0
     answered_talk = 0
@@ -333,17 +371,18 @@ def summarize_week(
         attempts += len(offers)
         attempt_distribution[len(offers)] += 1
         for destination in offers:
-            agent = _agent_for(destination, lookup) or OTHER
-            agents[agent]["offers"] += 1
+            agent = _agent_destination(destination, lookup)
+            if agent is not None and agent.department in departments:
+                agents[agent.display_name]["offers"] += 1
         recorded_offers = [
             item
             for item in row.get("recorded_offer_agent_destinations", "").split(";")
             if item
         ]
         for destination in recorded_offers:
-            agent = _agent_for(destination, lookup)
-            if agent is not None:
-                agents[agent]["recorded_offers"] += 1
+            agent = _agent_destination(destination, lookup)
+            if agent is not None and agent.department in departments:
+                agents[agent.display_name]["recorded_offers"] += 1
         confirmed = [
             item
             for item in row.get("confirmed_answered_agent_destinations", "").split(";")
@@ -355,35 +394,38 @@ def summarize_week(
         # their intersection defensively so malformed CSV data cannot produce
         # an answer without a recorded-offer denominator.
         answer_agents = {
-            _agent_for(item, lookup)
+            _agent_destination(item, lookup)
             for item in set(confirmed).intersection(recorded_offers)
         }
         answer_agents.discard(None)
+        answer_agents = {agent for agent in answer_agents if agent.department in departments}
         # Each reconstructed call-agent pair has already been de-duplicated.
         # A simultaneous call may therefore answer for more than one agent.
         for credited in answer_agents:
-            agents[credited]["answers"] += 1
+            agents[credited.display_name]["answers"] += 1
         if len(confirmed) == 1 and len(answer_agents) == 1:
             credited = next(iter(answer_agents))
-            agents[credited]["talk_seconds"] += duration
-            agents[credited].setdefault("durations", []).append(duration)
+            agents[credited.display_name]["talk_seconds"] += duration
+            agents[credited.display_name].setdefault("durations", []).append(duration)
             answered_talk += duration
         forwarded_agents = {
-            _agent_for(item, lookup)
+            _agent_destination(item, lookup)
             for item in row.get("forwarded_destinations", "").split(";")
             if item
         }
         forwarded_agents.discard(None)
         for agent in forwarded_agents:
-            agents[agent]["forwarded_away"] += 1
+            if agent.department in departments:
+                agents[agent.display_name]["forwarded_away"] += 1
         unknown_status_agents = {
-            _agent_for(item, lookup)
+            _agent_destination(item, lookup)
             for item in row.get("unknown_status_agent_destinations", "").split(";")
             if item
         }
         unknown_status_agents.discard(None)
         for agent in unknown_status_agents:
-            agents[agent]["unknown_status_exclusions"] += 1
+            if agent.department in departments:
+                agents[agent.display_name]["unknown_status_exclusions"] += 1
         if outcome in {"Connected / unknown attribution", "Answered / unattributed"}:
             anomalies["Unattributed answers"] += 1
         if outcome == "Ambiguous":

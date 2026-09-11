@@ -140,3 +140,43 @@ def test_lookup_agent_with_no_offers_is_retained(tmp_path):
     summary = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
     assert summary.agents["Alex"]["recorded_offers"] == 0
     assert summary.agents["Blair"]["recorded_offers"] == 0
+
+
+def test_combined_scope_counts_cross_department_call_once_and_keeps_department_outcomes(tmp_path):
+    membership = Destination("Alex", "Membership", "agent")
+    certification = Destination("Casey", "Certification", "agent")
+    other = Destination("Devon", "Support", "agent")
+    combined_lookup = AgentLookup(
+        {"15550101": membership, "15550202": certification, "15550303": other},
+        {"0101": frozenset({membership}), "0202": frozenset({certification}), "0303": frozenset({other})},
+    )
+    rows = [
+        row(offered_agent_destinations="15550101;15550202", offered_destinations="15550101;15550202", recorded_offer_agent_destinations="15550101;15550202", confirmed_answered_agent_destinations="15550101", outcome="Confirmed human answered"),
+        row(hunt_group="Certification", offered_agent_destinations="15550202", offered_destinations="15550202", recorded_offer_agent_destinations="15550202", confirmed_answered_agent_destinations="", outcome="Voicemail"),
+        row(hunt_group="Support", offered_agent_destinations="15550303", offered_destinations="15550303", recorded_offer_agent_destinations="15550303", confirmed_answered_agent_destinations="", outcome="Unanswered"),
+    ]
+    week = Week(date(2026, 8, 17))
+    combined = summarize_week(rows, week, combined_lookup, tmp_path / "missing.sqlite3", scope="combined")
+    membership_summary = summarize_week(rows, week, combined_lookup, tmp_path / "missing.sqlite3", scope="Membership")
+    certification_summary = summarize_week(rows, week, combined_lookup, tmp_path / "missing.sqlite3", scope="Certification")
+
+    assert combined.calls == 2
+    assert combined.time_categories["Business hours"] == 2
+    assert combined.weekday_hour_volume[("Mon", 10)] == 2
+    assert membership_summary.outcomes["Confirmed human answered"] == 1
+    assert certification_summary.outcomes == {**{key: 0 for key in certification_summary.outcomes}, "Confirmed human answered": 1, "Voicemail": 1}
+    assert set(combined.agents) == {"Alex", "Casey"}
+
+
+def test_certification_scope_can_be_empty_without_agent_or_coverage_values(tmp_path):
+    membership = Destination("Alex", "Membership", "agent")
+    certification = Destination("Casey", "Certification", "agent")
+    scoped_lookup = AgentLookup(
+        {"15550101": membership, "15550202": certification},
+        {"0101": frozenset({membership}), "0202": frozenset({certification})},
+    )
+    summary = summarize_week([row()], Week(date(2026, 8, 17)), scoped_lookup, tmp_path / "missing.sqlite3", scope="Certification")
+
+    assert summary.calls == 0
+    assert summary.attribution_coverage_denominator == 0
+    assert set(summary.agents) == {"Casey"}
