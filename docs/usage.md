@@ -77,18 +77,21 @@ answered`; forwarding or routing-only activity does not count as an answer. It
 shows forwarded/routing-only, voicemail, connected/unknown attribution,
 answered/unattributed, ambiguous, unknown, and unanswered outcomes separately.
 The chart has `No` (unanswered) and `Voicemail` segments, adding `Unknown /
-Ambiguous` only when needed for accurate totals. Its manager-only agent table shows the top five
-lookup-listed named agents by answers, then name, plus `Other / Unattributed`;
-it states how many further agents were omitted. Attribution coverage is
+Ambiguous` only when needed for accurate totals. Its manager-only agent table shows every
+lookup-listed agent, excluding hunt groups, voicemail, and `Other / Unattributed`. Attribution coverage is
 `confirmed known-agent answers / connected calls`, where connected calls are
 confirmed human answers plus `Connected / unknown attribution`, `Answered /
 unattributed`, and `Ambiguous` outcomes; forwarded/routing-only calls are not
 connected. A zero denominator is displayed as a dash. It never displays
 customer or agent phone numbers or repeat callers.
 It contains no outbound, speed-of-answer, wait-time, or “agent miss” metrics.
-Each offered destination is an agent offer. A named agent receives answer credit
-only if exactly one known agent is the sole possible answer destination.
-Untracked destinations or non-unique answers are counted as `Other / Unattributed`.
+The table's offer answer rate is the percentage of recorded offers answered, not
+a performance score or miss rate. A recorded offer is a duplicate-free
+call-agent pair with exact normalized `Yes` or `No`; `Yes` also counts as an
+answer. `Yes - Forwarded` is counted only as forwarded away. Unfamiliar agent
+statuses are shown as data-quality exclusions and never enter the rate. A
+zero-offer agent displays `N/A`. Simultaneous routing can offer one call to
+multiple agents, so agent offers are not call counts.
 
 The report is visibly **PRELIMINARY** when valid report periods in the metadata
 database do not continuously cover every moment of either selected week. Missing,
@@ -159,9 +162,11 @@ only one candidate contains each duplicate-free segment.
 
 Candidate rows contain a hashed ID, segment fingerprints, routing mode, ordered
 unique offered destinations and role-aware evidence columns:
-`offered_agent_destinations`, `confirmed_answered_agent_destinations`,
-`forwarded_destinations`, `system_routing_destinations`, `reached_voicemail`,
-and `unknown_answered_destinations`. Voicemail is never an agent answer. Outcomes
+`offered_agent_destinations`, `recorded_offer_agent_destinations`,
+`confirmed_answered_agent_destinations`, `forwarded_destinations`,
+`unknown_status_agent_destinations`, `system_routing_destinations`,
+`reached_voicemail`, and `unknown_answered_destinations`. Voicemail is never an
+agent answer. Outcomes
 separate confirmed agent answers, system/unattributed connections, routing-only,
 voicemail, unanswered, unknown, and ambiguous calls.
 
@@ -174,6 +179,9 @@ sequential.
 
 Use the [versioned 20-row manual-validation checklist](candidate-call-validation-checklist-v1.csv)
 to compare candidate output with Nextiva evidence.
+
+The candidate CSV is derived data. If `weekly-report` finds it has an older
+header, it atomically rebuilds it from the analysis CSV before reporting.
 
 Exit status `0` means all required reports succeeded. Exit status `1` means at
 least one report failed or a fatal configuration, mailbox, CSV, or state error

@@ -3,7 +3,9 @@ from datetime import date
 
 from nextiva_calls import app
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
-from nextiva_calls.segments import AgentLookup, Destination
+from nextiva_calls.records import CSV_COLUMNS
+from nextiva_calls.segments import AgentLookup, Destination, load_agent_lookup
+from nextiva_calls.storage import save_analysis
 from nextiva_calls.weekly_metrics import Week, summarize_week
 from nextiva_calls.weekly_report import StackedBarChart, _percentage, render_weekly_report
 
@@ -88,7 +90,7 @@ def test_weekly_report_default_uses_complete_days_ending_yesterday(monkeypatch, 
     assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-13_to_2026-08-19.pdf").exists()
 
 
-def test_agent_dashboard_limits_named_agents_to_top_five(tmp_path):
+def test_agent_dashboard_shows_every_lookup_agent_and_recorded_offer_rate(tmp_path):
     rows = []
     numbers = {f"1555010{index}": f"Agent {index}" for index in range(1, 7)}
     for number in numbers:
@@ -97,7 +99,8 @@ def test_agent_dashboard_limits_named_agents_to_top_five(tmp_path):
             {
                 "call_timestamp_ct": "2026-08-17T10:00:00-05:00",
                 "offered_destinations": number,
-                "offered_agent_destinations": number,
+                    "offered_agent_destinations": number,
+                    "recorded_offer_agent_destinations": number,
                 "confirmed_answered_agent_destinations": number,
                 "maximum_duration_seconds": "60",
                 "outcome": "Confirmed human answered",
@@ -112,8 +115,10 @@ def test_agent_dashboard_limits_named_agents_to_top_five(tmp_path):
     content = output.read_bytes()
     assert b"Agent 1" in content
     assert b"Agent 5" in content
-    assert b"Agent 6" not in content
-    assert b"1 additional named agent was omitted" in content
+    assert b"Agent 6" in content
+    assert b"Recorded offers" in content
+    assert b"Offer answer rate" in content
+    assert b"100.0%" in content
 
 
 def test_daily_outcome_chart_uses_reporting_period_order(tmp_path):
@@ -142,3 +147,32 @@ def test_weekly_report_accepts_non_monday(monkeypatch, tmp_path):
         writer.writeheader()
     monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
     assert app.main(["weekly-report", "--week-start", "2026-08-18"]) == 0
+
+
+def test_weekly_report_rebuilds_a_stale_candidate_schema(monkeypatch, tmp_path):
+    raw = tmp_path / "calls.csv"
+    analysis = raw.with_suffix(".analysis.csv")
+    candidates = raw.with_suffix(".candidate-calls.csv")
+    lookup_file = tmp_path / "agents.csv"
+    lookup_file.write_text(
+        "phone_number,display_name,department,destination_type\n"
+        "15550101,Alex,Membership,agent\n",
+        encoding="utf-8",
+    )
+    with raw.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(CSV_COLUMNS)
+        writer.writerow([
+            "Membership", "Aug 17 2026 10:00 AM", "60", "Inbound", "Yes",
+            "15550001", "15550101",
+        ])
+    save_analysis(analysis, raw, load_agent_lookup(lookup_file))
+    candidates.write_text("candidate_id,old_column\none,old\n", encoding="utf-8")
+    output = tmp_path / "manager.pdf"
+    monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
+    monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup_file))
+
+    assert app.main(["weekly-report", "--week-start", "2026-08-17", "--output", str(output)]) == 0
+    with candidates.open(newline="", encoding="utf-8") as stream:
+        assert next(csv.reader(stream)) == list(CANDIDATE_COLUMNS)
+    assert b"100.0%" in output.read_bytes()
