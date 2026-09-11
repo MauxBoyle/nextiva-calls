@@ -20,7 +20,12 @@ from nextiva_calls.email_reports import (
 from nextiva_calls.mailbox import ImapMailbox, RawMessage
 from nextiva_calls.records import CallRecord
 from nextiva_calls.report import ReportError, ReportResult, load_report
-from nextiva_calls.segments import AgentLookupError, load_agent_lookup
+from nextiva_calls.segments import (
+    AgentLookupError,
+    ClosureDatesError,
+    load_agent_lookup,
+    load_closure_dates,
+)
 from nextiva_calls.storage import (
     MetadataStore,
     StorageError,
@@ -62,6 +67,10 @@ def run_import(
         lookup = load_agent_lookup(config.agent_lookup_file)
     except AgentLookupError as error:
         raise StorageError("Agent lookup file is invalid") from error
+    try:
+        closure_dates = load_closure_dates(config.closure_dates_file)
+    except ClosureDatesError as error:
+        raise StorageError("Closure dates file is invalid") from error
     processed = state_reader(config.state_file)
     metadata_path = config.metadata_file or config.output_file.with_suffix(
         ".metadata.sqlite3"
@@ -166,7 +175,9 @@ def run_import(
                 warnings=tuple(warnings),
                 records=result.records,
             )
-            written = save_analysis(analysis_path, config.output_file, lookup)
+            written = save_analysis(
+                analysis_path, config.output_file, lookup, closure_dates
+            )
             save_candidate_calls(
                 candidate_path,
                 analysis_path,

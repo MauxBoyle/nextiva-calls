@@ -113,7 +113,12 @@ def append_records(path: Path, records: list[CallRecord]) -> int:
     return len(records)
 
 
-def save_analysis(path: Path, raw_path: Path, lookup: AgentLookup) -> int:
+def save_analysis(
+    path: Path,
+    raw_path: Path,
+    lookup: AgentLookup,
+    closure_dates: frozenset[str] | None = None,
+) -> int:
     """Atomically derive enriched, first-seen unique segments from raw data."""
     rows = load_csv(raw_path)
     unique: list[tuple[str, ...]] = []
@@ -128,7 +133,12 @@ def save_analysis(path: Path, raw_path: Path, lookup: AgentLookup) -> int:
         with temporary.open("w", newline="", encoding="utf-8") as stream:
             writer = csv.writer(stream)
             writer.writerow(ANALYSIS_COLUMNS)
-            writer.writerows(clean_segment(row, lookup) for row in unique)
+            writer.writerows(
+                clean_segment(row, lookup, closure_dates)
+                if closure_dates is not None
+                else clean_segment(row, lookup)
+                for row in unique
+            )
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)

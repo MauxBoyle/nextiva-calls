@@ -6,7 +6,7 @@ import csv
 import re
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -30,28 +30,15 @@ ANALYSIS_COLUMNS = CSV_COLUMNS + (
     "is_holiday",
 )
 
-# These are the 2026 office closures used when classifying business hours.
-CLOSURE_DATES_2026 = frozenset(
-    {
-        "2026-01-01",  # New Year's Day
-        "2026-01-19",  # Martin Luther King Jr. Day
-        "2026-02-16",  # Presidents Day
-        "2026-05-25",  # Memorial Day
-        "2026-06-19",  # Juneteenth
-        "2026-07-03",  # Independence Day (observed)
-        "2026-09-07",  # Labor Day
-        "2026-10-12",  # Indigenous Peoples' Day
-        "2026-11-11",  # Veterans Day
-        "2026-11-26",  # Thanksgiving Day
-        "2026-11-27",  # Day after Thanksgiving
-        "2026-12-25",  # Christmas Day
-    }
-)
 _PHONE_CHARACTERS = re.compile(r"^[0-9+().\-\s]+$")
 
 
 class AgentLookupError(ValueError):
     """Raised when the externally supplied agent lookup cannot be used."""
+
+
+class ClosureDatesError(ValueError):
+    """Raised when the manager-maintained closure calendar cannot be used."""
 
 
 @dataclass(frozen=True)
@@ -69,6 +56,42 @@ class AgentLookup:
 
     by_number: dict[str, Destination]
     by_extension: dict[str, frozenset[Destination]]
+
+
+def load_closure_dates(path: Path) -> frozenset[str]:
+    """Read a one-column CSV of unique ISO closure dates.
+
+    Dates stay as ISO strings because that is also the stable date format used
+    in the analysis and candidate-call CSVs.
+    """
+    try:
+        with path.open(newline="", encoding="utf-8") as stream:
+            rows = list(csv.reader(stream))
+    except (OSError, UnicodeError, csv.Error) as error:
+        raise ClosureDatesError("Closure dates file could not be read") from error
+    if not rows or rows[0] != ["date"]:
+        raise ClosureDatesError("Closure dates file must have exactly a date header")
+    dates: set[str] = set()
+    for row_number, row in enumerate(rows[1:], start=2):
+        if len(row) != 1 or not row[0].strip():
+            raise ClosureDatesError(
+                f"Closure dates row {row_number} must contain one nonblank date"
+            )
+        value = row[0].strip()
+        try:
+            parsed = date.fromisoformat(value)
+        except ValueError as error:
+            raise ClosureDatesError(
+                f"Closure dates row {row_number} must be YYYY-MM-DD"
+            ) from error
+        if parsed.isoformat() != value:
+            raise ClosureDatesError(
+                f"Closure dates row {row_number} must be YYYY-MM-DD"
+            )
+        if value in dates:
+            raise ClosureDatesError(f"Closure dates file contains duplicate date {value}")
+        dates.add(value)
+    return frozenset(dates)
 
 
 def normalize_phone_number(value: str) -> str | None:
@@ -162,7 +185,11 @@ def _normalized_answered(value: str) -> tuple[str, bool]:
     return value, False
 
 
-def clean_segment(row: tuple[str, ...], lookup: AgentLookup) -> tuple[str, ...]:
+def clean_segment(
+    row: tuple[str, ...],
+    lookup: AgentLookup,
+    closure_dates: frozenset[str] = frozenset(),
+) -> tuple[str, ...]:
     """Enrich one raw row; anomalies remain available for analysis, not rejection."""
     name, called_at, duration, direction, answered, source, destination = row
     reasons: list[str] = []
@@ -199,7 +226,7 @@ def clean_segment(row: tuple[str, ...], lookup: AgentLookup) -> tuple[str, ...]:
     if not known_answered:
         reasons.append("unknown_answered")
 
-    holiday = timestamp is not None and timestamp.date().isoformat() in CLOSURE_DATES_2026
+    holiday = timestamp is not None and timestamp.date().isoformat() in closure_dates
     business_hours = bool(
         timestamp is not None
         and timestamp.weekday() < 5

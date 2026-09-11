@@ -25,6 +25,7 @@ def test_config_defaults_and_derived_state_file():
     assert config.membership_hunt_group == "Membership"
     assert config.membership_simultaneous_from == "2026-08-15T00:00:00-05:00"
     assert config.agent_lookup_file == Path("agent_lookup.csv")
+    assert config.closure_dates_file == Path("closure_dates.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com"})
     assert config.report_timeout_seconds == 30
 
@@ -43,6 +44,7 @@ def test_config_custom_values():
             "NEXTIVA_MEMBERSHIP_HUNT_GROUP": "Reception",
             "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-16T00:00:00-05:00",
             "NEXTIVA_AGENT_LOOKUP_FILE": "lookups/agents.csv",
+            "NEXTIVA_CLOSURE_DATES_FILE": "closure_dates.csv",
             "NEXTIVA_ALLOWED_HOSTS": " CT.NEXTIVA.COM, reports.example.test. ",
             "NEXTIVA_REPORT_TIMEOUT_SECONDS": "4.5",
         }
@@ -53,6 +55,7 @@ def test_config_custom_values():
     assert config.candidate_calls_file == Path("candidates/custom.csv")
     assert config.membership_hunt_group == "Reception"
     assert config.agent_lookup_file == Path("lookups/agents.csv")
+    assert config.closure_dates_file == Path("closure_dates.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com", "reports.example.test"})
     assert config.report_timeout_seconds == 4.5
 

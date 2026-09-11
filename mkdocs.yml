@@ -38,4 +38,5 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Usage: usage.md
+  - Manager runbook: operations.md
   - API Reference: api.md

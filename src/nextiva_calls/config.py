@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from nextiva_calls.segments import ClosureDatesError, load_closure_dates
+
 
 class ConfigError(ValueError):
     """Raised when configuration is missing or unsafe."""
@@ -31,6 +33,7 @@ class Config:
     analysis_file: Path | None = None
     candidate_calls_file: Path | None = None
     agent_lookup_file: Path | None = None
+    closure_dates_file: Path = Path("closure_dates.csv")
     membership_hunt_group: str = "Membership"
     membership_simultaneous_from: str = "2026-08-15T00:00:00-05:00"
 
@@ -127,6 +130,14 @@ class Config:
         lookup = Path(values["NEXTIVA_AGENT_LOOKUP_FILE"].strip())
         if lookup.name == "":
             raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE must name a file")
+        closure_value = values.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv").strip()
+        closure_dates = Path(closure_value)
+        if closure_dates.name == "":
+            raise ConfigError("NEXTIVA_CLOSURE_DATES_FILE must name a file")
+        try:
+            load_closure_dates(closure_dates)
+        except ClosureDatesError as error:
+            raise ConfigError(f"NEXTIVA_CLOSURE_DATES_FILE is invalid: {error}") from error
         named_paths = {
             "NEXTIVA_OUTPUT_FILE": output,
             "NEXTIVA_STATE_FILE": state,
@@ -134,6 +145,7 @@ class Config:
             "NEXTIVA_ANALYSIS_FILE": analysis,
             "NEXTIVA_CANDIDATE_CALLS_FILE": candidate_calls,
             "NEXTIVA_AGENT_LOOKUP_FILE": lookup,
+            "NEXTIVA_CLOSURE_DATES_FILE": closure_dates,
         }
         resolved_paths = [path.resolve() for path in named_paths.values()]
         if len(resolved_paths) != len(set(resolved_paths)):
@@ -153,6 +165,7 @@ class Config:
             analysis_file=analysis,
             candidate_calls_file=candidate_calls,
             agent_lookup_file=lookup,
+            closure_dates_file=closure_dates,
             membership_hunt_group=membership_hunt_group,
             membership_simultaneous_from=membership_simultaneous_from,
         )
