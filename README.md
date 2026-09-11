@@ -155,13 +155,18 @@ seven days. Its default period ends yesterday, avoiding partial current-day
 data. Membership metrics include calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
 calls that offer a destination matching the agent lookup (exact number or a
 uniquely mapped final-four extension). Unrelated calls do not affect Membership
-headlines, coverage, heatmaps, outcomes, routing, or agent metrics.
+headlines, coverage, heatmaps, outcomes, routing, or agent metrics. Every
+Membership-scoped call is part of the headline denominator, including
+after-hours, weekend, holiday, and voicemail-only calls.
 
 It includes reporting-period, data-through, and generation timestamps; a stacked
 weekday outcome chart, coverage, routing, hunt-group, and heatmap views; and a
-manager-only agent table. The chart combines human and forwarded answers as
-`Yes`, shows `No` for unanswered calls and `Voicemail` separately, and adds
-`Unknown / Ambiguous` only when present. The hunt-group comparison is the sole
+manager-only agent table. `Yes` means only `Confirmed human answered`; forwarded
+or routing-only calls never count as `Yes`. It shows forwarded/routing-only,
+voicemail, connected/unknown attribution, answered/unattributed, ambiguous,
+unknown, and unanswered outcomes separately. The chart shows `No` for
+unanswered calls and `Voicemail` separately, and adds `Unknown / Ambiguous` only
+when present. The hunt-group comparison is the sole
 cross-department exception: it uses all in-period candidates for Reception,
 Membership, Certification, and Bookstore. The agent table shows at most five
 lookup-listed named agents, then `Other / Unattributed`; additional named agents
@@ -174,6 +179,12 @@ Only agent-role destinations count as named-agent offers. Only confirmed
 answered-agent evidence receives named-agent answer credit; system routing,
 forwarding, voicemail, and unattributed evidence remain visible through their
 outcomes and anomaly counts.
+
+The dashboard's attribution coverage is `confirmed known-agent answers /
+connected calls`. Connected calls are confirmed human answers plus `Connected /
+unknown attribution`, `Answered / unattributed`, and `Ambiguous` outcomes.
+`Forwarded / routing only` is not connected. A zero denominator is displayed as
+a dash.
 
 A week is marked **PRELIMINARY** unless valid report-period metadata in
 `NEXTIVA_METADATA_FILE` continuously covers the entire week. Missing, invalid,

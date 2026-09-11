@@ -5,7 +5,7 @@ from nextiva_calls import app
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
 from nextiva_calls.segments import AgentLookup, Destination
 from nextiva_calls.weekly_metrics import Week, summarize_week
-from nextiva_calls.weekly_report import StackedBarChart, render_weekly_report
+from nextiva_calls.weekly_report import StackedBarChart, _percentage, render_weekly_report
 
 
 def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
@@ -47,8 +47,11 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
     assert content.startswith(b"%PDF")
     assert b"PRELIMINARY" in content
     assert b"Aug 17, 2026" in content
-    assert b"Membership candidate calls" in content
+    assert b"All scoped inbound calls" in content
     assert b"% confirmed human answered" in content
+    assert b"Attribution coverage" in content
+    assert b"Forwarded / routing only" in content
+    assert b"Connected / unknown attribution" in content
     assert b"15550001" not in content
     assert b"15550101" not in content
     assert content.count(b"/Type /Page\n") == 3
@@ -117,6 +120,17 @@ def test_daily_outcome_chart_uses_reporting_period_order(tmp_path):
     summary = summarize_week([], Week(date(2026, 8, 20)), AgentLookup({}, {}), tmp_path / "missing.sqlite3")
 
     assert StackedBarChart(summary).days == ("Thu", "Fri", "Sat", "Sun", "Mon", "Tue", "Wed")
+
+
+def test_weekly_report_uses_safe_dash_for_zero_kpi_denominators(tmp_path):
+    summary = summarize_week([], Week(date(2026, 8, 17)), AgentLookup({}, {}), tmp_path / "missing.sqlite3")
+    output = tmp_path / "empty.pdf"
+
+    render_weekly_report(summary, summary, output)
+
+    assert b"Attribution coverage" in output.read_bytes()
+    assert _percentage(summary.confirmed_known_agent_answers, summary.eligible_inbound_calls) == "—"
+    assert _percentage(summary.attribution_coverage_numerator, summary.attribution_coverage_denominator) == "—"
 
 
 def test_weekly_report_accepts_non_monday(monkeypatch, tmp_path):

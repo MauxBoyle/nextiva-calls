@@ -66,6 +66,11 @@ class WeeklySummary:
     week: Week
     preliminary: bool
     calls: int
+    eligible_inbound_calls: int
+    confirmed_known_agent_answers: int
+    connected_calls: int
+    attribution_coverage_numerator: int
+    attribution_coverage_denominator: int
     outcomes: dict[str, int]
     routing_attempts: int
     durations: DurationStats
@@ -271,6 +276,16 @@ def summarize_week(
         else "Unknown"
         for row, _ in selected
     )
+    confirmed_known_agent_answers = outcomes["Confirmed human answered"]
+    connected_calls = sum(
+        outcomes[outcome]
+        for outcome in (
+            "Confirmed human answered",
+            "Connected / unknown attribution",
+            "Answered / unattributed",
+            "Ambiguous",
+        )
+    )
     categories = Counter(_category(when) for _, when in selected)
     weekdays = Counter(when.strftime("%a") for _, when in selected)
     hours = Counter(when.hour for _, when in selected)
@@ -347,6 +362,11 @@ def summarize_week(
         week=week,
         preliminary=not _period_is_continuous(metadata_path, week),
         calls=len(selected),
+        eligible_inbound_calls=len(selected),
+        confirmed_known_agent_answers=confirmed_known_agent_answers,
+        connected_calls=connected_calls,
+        attribution_coverage_numerator=confirmed_known_agent_answers,
+        attribution_coverage_denominator=connected_calls,
         outcomes={key: outcomes[key] for key in OUTCOMES},
         routing_attempts=attempts,
         durations=duration_stats,
