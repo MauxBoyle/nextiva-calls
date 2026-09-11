@@ -22,7 +22,7 @@ def lookup():
 
 
 def row(**updates):
-    values = {"call_timestamp_ct": "2026-08-17T10:00:00-05:00", "from_number_normalized": "15550001", "hunt_group": "Membership", "routing_mode": "Simultaneous", "offered_destinations": "15550101;15550102", "offered_agent_destinations": "15550101;15550102", "confirmed_answered_agent_destinations": "15550101", "forwarded_destinations": "", "system_routing_destinations": "", "unknown_answered_destinations": "", "maximum_duration_seconds": "75", "outcome": "Confirmed human answered"}
+    values = {"call_timestamp_ct": "2026-08-17T10:00:00-05:00", "from_number_normalized": "15550001", "hunt_group": "Membership", "routing_mode": "Simultaneous", "offered_destinations": "15550101;15550102", "offered_agent_destinations": "15550101;15550102", "recorded_offer_agent_destinations": "15550101;15550102", "confirmed_answered_agent_destinations": "15550101", "forwarded_destinations": "", "unknown_status_agent_destinations": "", "system_routing_destinations": "", "unknown_answered_destinations": "", "maximum_duration_seconds": "75", "outcome": "Confirmed human answered"}
     values.update(updates)
     return values
 
@@ -61,12 +61,12 @@ def test_forwarded_known_agent_is_selected_and_counts_as_an_offer(tmp_path):
 def test_only_confirmed_agent_evidence_receives_answer_credit(tmp_path):
     rows = [
         row(),
-        row(outcome="Connected / unknown attribution", offered_agent_destinations="", confirmed_answered_agent_destinations="", system_routing_destinations="15550999"),
-        row(outcome="Answered / unattributed", offered_agent_destinations="", confirmed_answered_agent_destinations="", unknown_answered_destinations="18880000"),
-        row(outcome="Forwarded / routing only", confirmed_answered_agent_destinations="", forwarded_destinations="15550101"),
+        row(outcome="Connected / unknown attribution", offered_agent_destinations="", recorded_offer_agent_destinations="", confirmed_answered_agent_destinations="", system_routing_destinations="15550999"),
+        row(outcome="Answered / unattributed", offered_agent_destinations="", recorded_offer_agent_destinations="", confirmed_answered_agent_destinations="", unknown_answered_destinations="18880000"),
+        row(outcome="Forwarded / routing only", recorded_offer_agent_destinations="", confirmed_answered_agent_destinations="", forwarded_destinations="15550101"),
     ]
     summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
-    assert summary.agents["Alex"] == {"offers": 2, "answers": 1, "talk_seconds": 75, "median_seconds": 75}
+    assert summary.agents["Alex"] == {"offers": 2, "recorded_offers": 1, "answers": 1, "forwarded_away": 1, "unknown_status_exclusions": 0, "talk_seconds": 75, "median_seconds": 75}
     assert summary.answered_talk_seconds == 75
     assert summary.anomalies["Unattributed answers"] == 2
     assert summary.outcomes["Confirmed human answered"] == 1
@@ -118,3 +118,25 @@ def test_load_candidates_rejects_legacy_header(tmp_path):
     path.write_text("candidate_id,possible_answering_destinations\none,15550101\n", encoding="utf-8")
     with pytest.raises(StorageError, match="header"):
         load_candidates(path)
+
+
+def test_recorded_offer_rate_evidence_excludes_forwarded_and_unknown_statuses(tmp_path):
+    rows = [
+        row(recorded_offer_agent_destinations="15550101;15550102"),
+        row(recorded_offer_agent_destinations="15550101", confirmed_answered_agent_destinations="", outcome="Unanswered"),
+        row(recorded_offer_agent_destinations="", confirmed_answered_agent_destinations="", forwarded_destinations="15550101", outcome="Forwarded / routing only"),
+        row(recorded_offer_agent_destinations="15550101", confirmed_answered_agent_destinations="", unknown_status_agent_destinations="15550101", outcome="Unknown"),
+    ]
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+    assert summary.agents["Alex"]["recorded_offers"] == 3
+    assert summary.agents["Alex"]["answers"] == 1
+    assert summary.agents["Alex"]["forwarded_away"] == 1
+    assert summary.agents["Alex"]["unknown_status_exclusions"] == 1
+    assert summary.agents["Blair"]["recorded_offers"] == 1
+    assert summary.agents["Blair"]["answers"] == 0
+
+
+def test_lookup_agent_with_no_offers_is_retained(tmp_path):
+    summary = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+    assert summary.agents["Alex"]["recorded_offers"] == 0
+    assert summary.agents["Blair"]["recorded_offers"] == 0

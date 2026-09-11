@@ -12,7 +12,7 @@ from reportlab.lib.units import inch
 from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from nextiva_calls.segments import CENTRAL_TIME
-from nextiva_calls.weekly_metrics import OTHER, OUTCOME_BUCKETS, WeeklySummary
+from nextiva_calls.weekly_metrics import OUTCOME_BUCKETS, WeeklySummary
 
 NAVY, PALE, RED = colors.HexColor("#123B5D"), colors.HexColor("#EAF2F7"), colors.HexColor("#A61B1B")
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -123,17 +123,26 @@ def _metadata_text(summary: WeeklySummary) -> str:
     return f"Data through: {inclusive:%b %-d, %Y %-I:%M %p} CT"
 
 
-def _agent_rows(current: WeeklySummary, prior: WeeklySummary) -> tuple[list[list[object]], int]:
-    named = sorted(((name, values) for name, values in current.agents.items() if name != OTHER), key=lambda item: (-item[1].get("answers", 0), item[0]))
-    shown, omitted = named[:5], max(0, len(named) - 5)
-    other = current.agents.get(OTHER, {})
-    if other or current.anomalies["Unattributed answers"]:
-        shown.append((OTHER, other))
-    rows: list[list[object]] = [["Agent", "Offers", "Answers", "Talk time", "Median", "Offer Δ", "Answer Δ", "Talk Δ"]]
-    for name, values in shown:
-        before = prior.agents.get(name, {})
-        rows.append([name, values.get("offers", 0), values.get("answers", 0), _seconds(values.get("talk_seconds", 0)), _seconds(values.get("median_seconds", 0)), _delta(values.get("offers", 0) - before.get("offers", 0)), _delta(values.get("answers", 0) - before.get("answers", 0)), _seconds(values.get("talk_seconds", 0) - before.get("talk_seconds", 0))])
-    return rows, omitted
+def _offer_answer_rate(values: dict[str, int]) -> str:
+    offers = values.get("recorded_offers", 0)
+    return f"{100 * values.get('answers', 0) / offers:.1f}%" if offers else "N/A"
+
+
+def _agent_rows(current: WeeklySummary) -> list[list[object]]:
+    rows: list[list[object]] = [[
+        "Agent", "Recorded offers", "Answers", "Offer answer rate",
+        "Forwarded away", "Unknown-status exclusions",
+    ]]
+    for name, values in sorted(current.agents.items()):
+        rows.append([
+            name,
+            values.get("recorded_offers", 0),
+            values.get("answers", 0),
+            _offer_answer_rate(values),
+            values.get("forwarded_away", 0),
+            values.get("unknown_status_exclusions", 0),
+        ])
+    return rows
 
 
 def render_weekly_report(current: WeeklySummary, prior: WeeklySummary, output: Path, generated_at: datetime | None = None) -> None:
@@ -187,13 +196,12 @@ def render_weekly_report(current: WeeklySummary, prior: WeeklySummary, output: P
     story.append(PageBreak())
 
     story.append(Paragraph("Manager-only agent attribution", styles["Title"]))
-    story.append(Paragraph("Named agents are limited to lookup-listed agents (top five by answers, then name). Unknown, ambiguous, and untracked routing or answer activity is retained as Other / Unattributed for reconciliation.", styles["Normal"]))
-    agent_rows, omitted = _agent_rows(current, prior)
-    _heading(story, styles, "Agent answer activity and week-over-week deltas")
-    story.append(_table(agent_rows, [1.32*inch, .56*inch, .62*inch, .78*inch, .7*inch, .55*inch, .62*inch, .78*inch], small=True))
-    story.append(Paragraph(f"{omitted} additional named agent{'s were' if omitted != 1 else ' was'} omitted from this printable view.", styles["Tiny"]))
+    story.append(Paragraph("All lookup-listed agents are shown. This is the percentage of recorded offers answered, not a performance score or miss rate. Simultaneous routing can record one call as an offer to multiple agents.", styles["Normal"]))
+    agent_rows = _agent_rows(current)
+    _heading(story, styles, "Recorded-offer answer rate by agent")
+    story.append(_table(agent_rows, [1.35*inch, .9*inch, .55*inch, .95*inch, .8*inch, 1.2*inch], small=True))
     _heading(story, styles, "Definitions and data-quality notes")
-    story.append(Paragraph("Membership candidates are all scoped inbound calls: calls to the configured Membership hunt group or calls offering a lookup-listed agent destination, including after-hours, weekend, holiday, and voicemail-only calls. The hunt-group comparison is the exception: it compares all in-period candidates for Reception, Membership, Certification, and Bookstore. Confirmed human answered is the only Yes measure and requires reconstructed known-agent answer evidence. Attribution coverage is confirmed known-agent answers divided by connected calls; connected calls are confirmed answers plus connected / unknown attribution, answered / unattributed, and ambiguous outcomes. Forwarded / routing only is not connected. An offer is every destination listed in routing. Unknown, untracked, or non-unique answers remain <b>Other / Unattributed</b>.", styles["Normal"]))
+    story.append(Paragraph("Membership candidates are all scoped inbound calls: calls to the configured Membership hunt group or calls offering a lookup-listed agent destination, including after-hours, weekend, holiday, and voicemail-only calls. The hunt-group comparison is the exception: it compares all in-period candidates for Reception, Membership, Certification, and Bookstore. Confirmed human answered is the only Yes measure and requires reconstructed known-agent answer evidence. Attribution coverage is confirmed known-agent answers divided by connected calls; connected calls are confirmed answers plus connected / unknown attribution, answered / unattributed, and ambiguous outcomes. Forwarded / routing only is not connected. A recorded offer is one duplicate-free call-agent pair with normalized <b>Yes</b> or <b>No</b>; <b>Yes</b> also counts as an answer. <b>Yes - Forwarded</b> appears only as forwarded away. Unfamiliar statuses appear only as per-agent data-quality exclusions and never enter the rate. A zero-offer rate is N/A.", styles["Normal"]))
     story.extend([Spacer(1, .06*inch), _table([["Anomaly", "Count"]] + [[name, current.anomalies[name]] for name in ("Ambiguous outcomes", "Unknown outcomes", "Unattributed answers")], [2.6*inch, .9*inch]), Spacer(1, .1*inch)])
     story.append(Paragraph("Duration is the available maximum-duration proxy. This report contains no customer or agent phone numbers, repeat-caller listings, outbound measures, speed-of-answer, wait-time, or agent-miss claims.", styles["Tiny"]))
     document.build(story)

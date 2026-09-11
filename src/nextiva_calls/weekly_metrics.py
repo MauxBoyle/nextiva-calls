@@ -306,7 +306,12 @@ def summarize_week(
     )
     durations = [_duration(row) for row, _ in selected]
     groups: dict[str, Counter[str]] = {group: Counter() for group in HUNT_GROUPS}
+    # Start with every lookup-listed person. This makes zero recorded offers
+    # visible in the manager report instead of silently omitting that agent.
     agents: defaultdict[str, Counter[str]] = defaultdict(Counter)
+    for destination in lookup.by_number.values():
+        if destination.destination_type == "agent":
+            agents[destination.display_name]
     attempts = 0
     answered_talk = 0
     attempt_distribution: Counter[int] = Counter()
@@ -330,6 +335,15 @@ def summarize_week(
         for destination in offers:
             agent = _agent_for(destination, lookup) or OTHER
             agents[agent]["offers"] += 1
+        recorded_offers = [
+            item
+            for item in row.get("recorded_offer_agent_destinations", "").split(";")
+            if item
+        ]
+        for destination in recorded_offers:
+            agent = _agent_for(destination, lookup)
+            if agent is not None:
+                agents[agent]["recorded_offers"] += 1
         confirmed = [
             item
             for item in row.get("confirmed_answered_agent_destinations", "").split(";")
@@ -337,14 +351,39 @@ def summarize_week(
         ]
         # Reconstruction only puts known-agent ordinary Yes segments here.  A
         # malformed candidate is still kept conservative: it receives no credit.
-        answer_agents = {_agent_for(item, lookup) for item in confirmed}
+        # Both fields are derived from the same normalized segments, but use
+        # their intersection defensively so malformed CSV data cannot produce
+        # an answer without a recorded-offer denominator.
+        answer_agents = {
+            _agent_for(item, lookup)
+            for item in set(confirmed).intersection(recorded_offers)
+        }
         answer_agents.discard(None)
+        # Each reconstructed call-agent pair has already been de-duplicated.
+        # A simultaneous call may therefore answer for more than one agent.
+        for credited in answer_agents:
+            agents[credited]["answers"] += 1
         if len(confirmed) == 1 and len(answer_agents) == 1:
             credited = next(iter(answer_agents))
-            agents[credited]["answers"] += 1
             agents[credited]["talk_seconds"] += duration
             agents[credited].setdefault("durations", []).append(duration)
             answered_talk += duration
+        forwarded_agents = {
+            _agent_for(item, lookup)
+            for item in row.get("forwarded_destinations", "").split(";")
+            if item
+        }
+        forwarded_agents.discard(None)
+        for agent in forwarded_agents:
+            agents[agent]["forwarded_away"] += 1
+        unknown_status_agents = {
+            _agent_for(item, lookup)
+            for item in row.get("unknown_status_agent_destinations", "").split(";")
+            if item
+        }
+        unknown_status_agents.discard(None)
+        for agent in unknown_status_agents:
+            agents[agent]["unknown_status_exclusions"] += 1
         if outcome in {"Connected / unknown attribution", "Answered / unattributed"}:
             anomalies["Unattributed answers"] += 1
         if outcome == "Ambiguous":
@@ -385,6 +424,16 @@ def summarize_week(
         agents={
             key: {
                 **{field: value for field, value in values.items() if field != "durations"},
+                **{
+                    field: values[field]
+                    for field in (
+                        "recorded_offers",
+                        "answers",
+                        "forwarded_away",
+                        "unknown_status_exclusions",
+                    )
+                    if field not in values
+                },
                 "median_seconds": int(median(values["durations"])) if values.get("durations") else 0,
             }
             for key, values in sorted(agents.items())

@@ -19,8 +19,10 @@ CANDIDATE_COLUMNS = (
     "offered_destinations",
     "unique_routing_attempts",
     "offered_agent_destinations",
+    "recorded_offer_agent_destinations",
     "confirmed_answered_agent_destinations",
     "forwarded_destinations",
+    "unknown_status_agent_destinations",
     "system_routing_destinations",
     "reached_voicemail",
     "unknown_answered_destinations",
@@ -116,6 +118,16 @@ def reconstruct_calls(
             if segment["destination_type"] == "agent"
             and segment["to_number_normalized"]
         )
+        # A recorded offer is deliberately narrower than a routing attempt:
+        # only an agent segment with an exact normalized Yes or No status can
+        # enter the answer-rate denominator.
+        recorded_offers = _unique(
+            segment["to_number_normalized"]
+            for segment, _ in segments
+            if segment["destination_type"] == "agent"
+            and segment["Answered"] in {"Yes", "No"}
+            and segment["to_number_normalized"]
+        )
         confirmed_agents = _unique(
             segment["to_number_normalized"]
             for segment, _ in segments
@@ -128,6 +140,13 @@ def reconstruct_calls(
             for segment, _ in segments
             if segment["is_voicemail_destination"] != "True"
             and segment["Answered"] == "Yes - Forwarded"
+            and segment["to_number_normalized"]
+        )
+        unknown_status_agents = _unique(
+            segment["to_number_normalized"]
+            for segment, _ in segments
+            if segment["destination_type"] == "agent"
+            and segment["Answered"] not in {"Yes", "No", "Yes - Forwarded"}
             and segment["to_number_normalized"]
         )
         system_routing = _unique(
@@ -194,8 +213,10 @@ def reconstruct_calls(
                 ";".join(destinations),
                 str(len(destinations)),
                 ";".join(offered_agents),
+                ";".join(recorded_offers),
                 ";".join(confirmed_agents),
                 ";".join(forwarded),
+                ";".join(unknown_status_agents),
                 ";".join(system_routing),
                 str(has_voicemail),
                 ";".join(unknown_answered),

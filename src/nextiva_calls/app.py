@@ -42,6 +42,8 @@ def _run_weekly_report(arguments: list[str]) -> int:
         week_for,
     )
     from nextiva_calls.weekly_report import render_weekly_report
+    from nextiva_calls.reconstruction import MEMBERSHIP_SIMULTANEOUS_FROM
+    from nextiva_calls.storage import save_candidate_calls
 
     parsed = _weekly_parser().parse_args(arguments)
     week = parse_week_start(parsed.week_start) if parsed.week_start else week_for()
@@ -53,6 +55,10 @@ def _run_weekly_report(arguments: list[str]) -> int:
     metadata = Path(
         os.environ.get("NEXTIVA_METADATA_FILE", "")
         or raw.with_suffix(".metadata.sqlite3")
+    )
+    analysis = Path(
+        os.environ.get("NEXTIVA_ANALYSIS_FILE", "")
+        or raw.with_suffix(".analysis.csv")
     )
     lookup_value = os.environ.get("NEXTIVA_AGENT_LOOKUP_FILE", "").strip()
     if not lookup_value:
@@ -66,7 +72,23 @@ def _run_weekly_report(arguments: list[str]) -> int:
         f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
     )
     lookup = load_agent_lookup(Path(lookup_value))
-    rows = load_candidates(candidates)
+    try:
+        rows = load_candidates(candidates)
+    except StorageError as error:
+        if str(error) != "Candidate calls CSV has an unexpected header":
+            raise
+        # Candidate calls are derived data. Rebuilding an older schema from
+        # its analysis CSV lets historical local exports use new metrics.
+        save_candidate_calls(
+            candidates,
+            analysis,
+            membership_hunt_group=membership_hunt_group,
+            membership_simultaneous_from=os.environ.get(
+                "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM",
+                MEMBERSHIP_SIMULTANEOUS_FROM,
+            ),
+        )
+        rows = load_candidates(candidates)
     render_weekly_report(
         summarize_week(rows, week, lookup, metadata, membership_hunt_group),
         summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group),

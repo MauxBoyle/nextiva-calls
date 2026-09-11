@@ -120,8 +120,9 @@ number. A row missing any of those values becomes its own `Unknown` candidate so
 no segment is discarded or guessed into another call. Candidate rows keep a
 stable hashed ID and their segment fingerprints for review. They include the
 ordered unique destinations offered (including voicemail `9999`) and separate,
-ordered duplicate-free evidence for offered agents, confirmed agent answers,
-forwarding, system routing, voicemail reached, and unknown ordinary-Yes answers.
+ordered duplicate-free evidence for offered agents, recorded agent offers,
+confirmed agent answers, forwarding, unknown agent statuses, system routing,
+voicemail reached, and unknown ordinary-Yes answers.
 They also retain maximum duration, routing mode, outcome, and conflicts. `9999`
 is never an agent answer. See the versioned [20-row review template](docs/candidate-call-validation-checklist-v1.csv).
 
@@ -171,17 +172,25 @@ unknown, and unanswered outcomes separately. The chart shows `No` for
 unanswered calls and `Voicemail` separately, and adds `Unknown / Ambiguous` only
 when present. The hunt-group comparison is the sole
 cross-department exception: it uses all in-period candidates for Reception,
-Membership, Certification, and Bookstore. The agent table shows at most five
-lookup-listed named agents, then `Other / Unattributed`; additional named agents
-are counted but omitted.
+Membership, Certification, and Bookstore. The agent table shows every
+lookup-listed agent (never hunt groups, voicemail, or `Other / Unattributed`).
 It deliberately does not make outbound, speed-of-answer, wait-time, or “agent
 miss” claims, and it never displays customer or agent phone numbers.
 
 The agent lookup used when generating the report is authoritative at report time.
-Only agent-role destinations count as named-agent offers. Only confirmed
-answered-agent evidence receives named-agent answer credit; system routing,
-forwarding, voicemail, and unattributed evidence remain visible through their
-outcomes and anomaly counts.
+The table's **offer answer rate** is the percentage of recorded offers answered,
+not a performance score or miss rate. A recorded offer is one duplicate-free
+call-agent pair with exact normalized `Yes` or `No` evidence; `Yes` also counts
+as one answer. `Yes - Forwarded` counts only as forwarded away. An unfamiliar
+status for an agent is shown only as a data-quality exclusion and never enters
+the rate. Agents with zero recorded offers show `N/A`. Simultaneous routing can
+offer one call to multiple agents, so agent offers need not equal call counts.
+
+Only agent-role destinations appear in this table. System routing, voicemail,
+and unattributed evidence remain visible through their call-level outcomes and
+anomaly counts. When `weekly-report` finds an older candidate-call CSV header,
+it atomically rebuilds that derived file from the corresponding analysis CSV
+before creating the report.
 
 The dashboard's attribution coverage is `confirmed known-agent answers /
 connected calls`. Connected calls are confirmed human answers plus `Connected /
