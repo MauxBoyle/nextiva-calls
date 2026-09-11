@@ -176,3 +176,37 @@ def test_weekly_report_rebuilds_a_stale_candidate_schema(monkeypatch, tmp_path):
     with candidates.open(newline="", encoding="utf-8") as stream:
         assert next(csv.reader(stream)) == list(CANDIDATE_COLUMNS)
     assert b"100.0%" in output.read_bytes()
+
+
+def test_combined_dashboard_has_separate_department_outcomes_and_hour_labels(tmp_path):
+    membership = Destination("Alex", "Membership", "agent")
+    certification = Destination("Casey", "Certification", "agent")
+    lookup = AgentLookup(
+        {"15550101": membership, "15550202": certification},
+        {"0101": frozenset({membership}), "0202": frozenset({certification})},
+    )
+    values = {column: "" for column in CANDIDATE_COLUMNS}
+    values.update({
+        "call_timestamp_ct": "2026-08-17T10:00:00-05:00",
+        "hunt_group": "Certification",
+        "offered_destinations": "15550202",
+        "offered_agent_destinations": "15550202",
+        "recorded_offer_agent_destinations": "15550202",
+        "maximum_duration_seconds": "60",
+        "outcome": "Voicemail",
+    })
+    week = Week(date(2026, 8, 17))
+    combined = summarize_week([values], week, lookup, tmp_path / "missing.sqlite3", scope="combined")
+    membership_summary = summarize_week([values], week, lookup, tmp_path / "missing.sqlite3", scope="Membership")
+    certification_summary = summarize_week([values], week, lookup, tmp_path / "missing.sqlite3", scope="Certification")
+    output = tmp_path / "combined.pdf"
+
+    render_weekly_report(combined, combined, output, membership=membership_summary, certification=certification_summary)
+
+    content = output.read_bytes()
+    assert b"Weekly Membership + Certification Call Dashboard" in content
+    assert b"Daily Certification call outcomes" in content
+    assert b"Daily Membership call outcomes" not in content
+    assert b"08:00" in content
+    assert b"Casey" in content
+    assert content.count(b"/Type /Page\n") == 3

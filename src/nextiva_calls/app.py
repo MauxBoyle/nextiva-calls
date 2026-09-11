@@ -90,9 +90,11 @@ def _run_weekly_report(arguments: list[str]) -> int:
         )
         rows = load_candidates(candidates)
     render_weekly_report(
-        summarize_week(rows, week, lookup, metadata, membership_hunt_group),
-        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group),
+        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined"),
+        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined"),
         output,
+        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership"),
+        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification"),
     )
     logger.info("Wrote weekly report to {}", output)
     return 0

@@ -41,7 +41,7 @@ You can also run it as a Python module:
 uv run python -m nextiva_calls
 ```
 
-Create a management-shareable Membership weekly PDF. By default it covers the
+Create a management-shareable Membership + Certification weekly PDF. By default it covers the
 seven complete Central-time days ending yesterday:
 
 ```bash
@@ -156,16 +156,19 @@ such as navigation or footer links, are ignored.
 
 `weekly-report` compares a seven-day Central-time period with the preceding
 seven days. Its default period ends yesterday, avoiding partial current-day
-data. Membership metrics include calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
-calls that offer a destination matching the agent lookup (exact number or a
-uniquely mapped final-four extension). Unrelated calls do not affect Membership
-headlines, coverage, heatmaps, outcomes, routing, or agent metrics. Every
-Membership-scoped call is part of the headline denominator, including
+data. Headline metrics, business-hours coverage, and the heatmap use the
+combined Membership + Certification scope: calls to the configured
+`NEXTIVA_MEMBERSHIP_HUNT_GROUP`, the literal `Certification` hunt group, or
+calls offering a matching Membership or Certification agent (exact number or a
+uniquely mapped final-four extension). This is a union: a cross-department call
+counts once in combined totals. Every scoped call is included, including
 after-hours, weekend, holiday, and voicemail-only calls.
 
-It includes reporting-period, data-through, and generation timestamps; a stacked
-weekday outcome chart, coverage, routing, hunt-group, and heatmap views; and a
-manager-only agent table. `Yes` means only `Confirmed human answered`; forwarded
+It includes reporting-period, data-through, and generation timestamps; separate
+Membership and Certification stacked weekday outcome charts and reconciliation
+tables (omitted for a department with no calls); combined coverage, routing,
+hunt-group, and heatmap views; and a manager-only agent table. A cross-department
+call appears in each matching department's outcome detail. `Yes` means only `Confirmed human answered`; forwarded
 or routing-only calls never count as `Yes`. It shows forwarded/routing-only,
 voicemail, connected/unknown attribution, answered/unattributed, ambiguous,
 unknown, and unanswered outcomes separately. The chart shows `No` for
@@ -186,9 +189,10 @@ status for an agent is shown only as a data-quality exclusion and never enters
 the rate. Agents with zero recorded offers show `N/A`. Simultaneous routing can
 offer one call to multiple agents, so agent offers need not equal call counts.
 
-Only agent-role destinations appear in this table. System routing, voicemail,
-and unattributed evidence remain visible through their call-level outcomes and
-anomaly counts. When `weekly-report` finds an older candidate-call CSV header,
+Only Membership and Certification agent-role destinations may appear in this
+table or produce agent-level attribution data. System routing, voicemail, other
+departments, and unattributed evidence remain visible only through call-level
+outcomes and anomaly counts. When `weekly-report` finds an older candidate-call CSV header,
 it atomically rebuilds that derived file from the corresponding analysis CSV
 before creating the report.
 
