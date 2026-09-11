@@ -9,10 +9,23 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
-from reportlab.platypus import Flowable, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Flowable,
+    PageBreak,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from nextiva_calls.segments import CENTRAL_TIME
-from nextiva_calls.weekly_metrics import OUTCOME_BUCKETS, WeeklySummary
+from nextiva_calls.weekly_metrics import (
+    OUTCOME_BUCKETS,
+    WeeklyInsight,
+    WeeklySummary,
+    build_weekly_insights,
+)
 
 NAVY, PALE, RED = colors.HexColor("#123B5D"), colors.HexColor("#EAF2F7"), colors.HexColor("#A61B1B")
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -156,6 +169,11 @@ def _outcome_table(summary: WeeklySummary) -> Table:
     ], [2.1*inch, .55*inch, 2.1*inch, .55*inch], small=True)
 
 
+def _insight_paragraph(insight: WeeklyInsight, styles: object) -> Paragraph:
+    """Render pre-calculated insight text without introducing new calculations."""
+    return Paragraph(insight.text, styles["Normal"])
+
+
 def render_weekly_report(
     current: WeeklySummary,
     prior: WeeklySummary,
@@ -164,11 +182,14 @@ def render_weekly_report(
     membership: WeeklySummary | None = None,
     certification: WeeklySummary | None = None,
 ) -> None:
-    """Write a fixed three-page US-Letter manager dashboard without phone numbers."""
+    """Write a fixed four-page US-Letter manager dashboard without phone numbers."""
     output.parent.mkdir(parents=True, exist_ok=True)
     generated_at = (generated_at or datetime.now(CENTRAL_TIME)).astimezone(CENTRAL_TIME)
     document = SimpleDocTemplate(str(output), pagesize=letter, pageCompression=0, rightMargin=38, leftMargin=38, topMargin=33, bottomMargin=33)
-    styles = getSampleStyleSheet(); styles["Title"].fontSize = 18; styles["Heading2"].textColor = NAVY; styles["Heading2"].fontSize = 11
+    styles = getSampleStyleSheet()
+    styles["Title"].fontSize = 18
+    styles["Heading2"].textColor = NAVY
+    styles["Heading2"].fontSize = 11
     styles.add(ParagraphStyle(name="Tiny", parent=styles["Normal"], fontSize=7.5, leading=9))
     story: list[object] = []
     period, prior_period = f"{current.week.start:%b %-d, %Y} – {current.week.end:%b %-d, %Y}", f"{prior.week.start:%b %-d} – {prior.week.end:%b %-d, %Y}"
@@ -213,9 +234,11 @@ def render_weekly_report(
     for row_index, day in enumerate(DAYS, start=1):
         heat_rows.append([day] + [current.weekday_hour_volume[(day, hour)] for hour in heat_hours])
         for col, hour in enumerate(heat_hours, start=1):
-            value, shade = current.weekday_hour_volume[(day, hour)], 1 - (.82 * current.weekday_hour_volume[(day, hour)] / maximum)
+            shade = 1 - (.82 * current.weekday_hour_volume[(day, hour)] / maximum)
             heat_colors.append(("BACKGROUND", (col, row_index), (col, row_index), colors.Color(shade, .95, 1)))
-    heat = Table(heat_rows, colWidths=[.48*inch] + [.43*inch]*len(heat_hours)); heat.setStyle(TableStyle(heat_colors)); story.append(heat)
+    heat = Table(heat_rows, colWidths=[.48 * inch] + [.43 * inch] * len(heat_hours))
+    heat.setStyle(TableStyle(heat_colors))
+    story.append(heat)
     _heading(story, styles, "Routing-attempt distribution")
     story.append(_table([["Offered destinations", "Calls"]] + [[str(count), value] for count, value in current.routing_attempt_distribution.items()], [2.3*inch, 1*inch]))
     story.append(PageBreak())
@@ -229,4 +252,22 @@ def render_weekly_report(
     story.append(Paragraph("Combined metrics, business-hours coverage, and the heatmap use the union of calls to the configured Membership hunt group, the Certification hunt group, or an offered Membership or Certification agent. A cross-department call counts once in combined totals, but appears in each matching department's outcome detail. Department outcome charts and reconciliation tables are intentionally separate and omitted when that department has no calls. The hunt-group comparison is a different scope: all in-period candidates for Reception, Membership, Certification, and Bookstore. Confirmed human answered is the only Yes measure and requires reconstructed known-agent answer evidence. Attribution coverage is confirmed known-agent answers divided by connected calls; connected calls are confirmed answers plus connected / unknown attribution, answered / unattributed, and ambiguous outcomes. Forwarded / routing only is not connected. A recorded offer is one duplicate-free call-agent pair with normalized <b>Yes</b> or <b>No</b>; <b>Yes</b> also counts as an answer. <b>Yes - Forwarded</b> appears only as forwarded away. Unfamiliar statuses appear only as per-agent data-quality exclusions and never enter the rate. A zero-offer rate is N/A.", styles["Normal"]))
     story.extend([Spacer(1, .06*inch), _table([["Anomaly", "Count"]] + [[name, current.anomalies[name]] for name in ("Ambiguous outcomes", "Unknown outcomes", "Unattributed answers")], [2.6*inch, .9*inch]), Spacer(1, .1*inch)])
     story.append(Paragraph("Duration is the available maximum-duration proxy. This report contains no customer or agent phone numbers, repeat-caller listings, outbound measures, speed-of-answer, wait-time, or agent-miss claims.", styles["Tiny"]))
+    story.append(PageBreak())
+
+    story.append(Paragraph("Automated insights", styles["Title"]))
+    story.append(Paragraph(
+        "These automated observations use only combined Membership + Certification call-level outcomes. "
+        "They contain no customer or agent phone numbers and make no agent-miss, wait-time, speed-of-answer, or outbound claims.",
+        styles["Normal"],
+    ))
+    _heading(story, styles, "Evidence-based weekly observations")
+    for insight in build_weekly_insights(current, prior):
+        story.append(_insight_paragraph(insight, styles))
+        story.append(Spacer(1, .08 * inch))
+    story.append(Paragraph(
+        "Rules: only voicemail rate and confirmed-human-answer rate are compared. A change is significant only "
+        "when both weeks have at least 20 scoped calls and the rate changes by at least 10 percentage points. "
+        "When either week is PRELIMINARY, trend observations are suppressed and only coverage information is shown.",
+        styles["Tiny"],
+    ))
     document.build(story)

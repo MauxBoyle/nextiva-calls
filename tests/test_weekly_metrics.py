@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -7,6 +8,7 @@ from nextiva_calls.storage import StorageError
 from nextiva_calls.weekly_metrics import (
     OTHER,
     Week,
+    build_weekly_insights,
     load_candidates,
     parse_week_start,
     summarize_week,
@@ -30,6 +32,79 @@ def row(**updates):
 def test_week_helpers():
     assert week_for(date(2026, 8, 20)) == Week(date(2026, 8, 13))
     assert parse_week_start("2026-08-17") == Week(date(2026, 8, 17))
+
+
+def insight_summary(tmp_path, *, calls, voicemail, confirmed, preliminary=False):
+    """Small complete summary for testing insight rules without PDF layout."""
+    base = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+    return replace(
+        base,
+        preliminary=preliminary,
+        calls=calls,
+        eligible_inbound_calls=calls,
+        confirmed_known_agent_answers=confirmed,
+        outcomes={**base.outcomes, "Voicemail": voicemail},
+    )
+
+
+def test_preliminary_insights_show_coverage_only(tmp_path):
+    current = insight_summary(tmp_path, calls=30, voicemail=15, confirmed=3, preliminary=True)
+    prior = insight_summary(tmp_path, calls=30, voicemail=1, confirmed=20)
+
+    insights = build_weekly_insights(current, prior)
+
+    assert [insight.kind for insight in insights] == ["coverage"]
+    assert "PRELIMINARY coverage" in insights[0].text
+    assert "Voicemail rate" not in insights[0].text
+
+
+@pytest.mark.parametrize(
+    ("current_voicemail", "prior_voicemail", "change"),
+    [(3, 1, "+10"), (1, 3, "-10")],
+)
+def test_voicemail_rate_change_at_threshold_is_significant(tmp_path, current_voicemail, prior_voicemail, change):
+    current = insight_summary(tmp_path, calls=20, voicemail=current_voicemail, confirmed=5)
+    prior = insight_summary(tmp_path, calls=20, voicemail=prior_voicemail, confirmed=5)
+
+    insight = build_weekly_insights(current, prior)[0]
+
+    assert insight.kind == "significant_change"
+    assert insight.metric == "Voicemail rate"
+    assert "Current (Aug 17, 2026–Aug 23, 2026):" in insight.text
+    assert "3/20" in insight.text or "1/20" in insight.text
+    assert f"{change} percentage points" in insight.text
+
+
+def test_confirmed_human_answer_rate_is_compared(tmp_path):
+    current = insight_summary(tmp_path, calls=20, voicemail=2, confirmed=15)
+    prior = insight_summary(tmp_path, calls=20, voicemail=2, confirmed=5)
+
+    insights = build_weekly_insights(current, prior)
+
+    assert [insight.metric for insight in insights] == ["Confirmed-human-answer rate"]
+    assert insights[0].current_count == 15
+    assert insights[0].prior_count == 5
+
+
+def test_low_sample_change_shows_counts_without_significance_claim(tmp_path):
+    current = insight_summary(tmp_path, calls=19, voicemail=10, confirmed=5)
+    prior = insight_summary(tmp_path, calls=20, voicemail=0, confirmed=5)
+
+    insight = build_weekly_insights(current, prior)[0]
+
+    assert insight.kind == "low_sample"
+    assert "10/19" in insight.text
+    assert "no significance claim is made" in insight.text
+
+
+def test_no_insight_message_when_no_documented_rule_is_met(tmp_path):
+    current = insight_summary(tmp_path, calls=30, voicemail=5, confirmed=10)
+    prior = insight_summary(tmp_path, calls=30, voicemail=4, confirmed=11)
+
+    insights = build_weekly_insights(current, prior)
+
+    assert [insight.kind for insight in insights] == ["no_observation"]
+    assert insights[0].text == "No automated observations met the documented rules."
 
 
 def test_membership_scope_uses_agent_evidence_not_system_or_voicemail(tmp_path):

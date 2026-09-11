@@ -1,4 +1,5 @@
 import csv
+from dataclasses import replace
 from datetime import date
 
 from nextiva_calls import app
@@ -7,7 +8,11 @@ from nextiva_calls.records import CSV_COLUMNS
 from nextiva_calls.segments import AgentLookup, Destination, load_agent_lookup
 from nextiva_calls.storage import save_analysis
 from nextiva_calls.weekly_metrics import Week, summarize_week
-from nextiva_calls.weekly_report import StackedBarChart, _percentage, render_weekly_report
+from nextiva_calls.weekly_report import (
+    StackedBarChart,
+    _percentage,
+    render_weekly_report,
+)
 
 
 def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
@@ -54,9 +59,14 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
     assert b"Attribution coverage" in content
     assert b"Forwarded / routing only" in content
     assert b"Connected / unknown attribution" in content
+    assert b"Automated insights" in content
+    assert b"PRELIMINARY coverage" in content
+    assert b"trend observations are suppressed" in content
+    assert b"no customer or agent phone numbers" in content
+    assert b"no agent-miss, wait-time, speed-of-answer, or outbound claims" in content
     assert b"15550001" not in content
     assert b"15550101" not in content
-    assert content.count(b"/Type /Page\n") == 3
+    assert content.count(b"/Type /Page\n") == 4
 
 
 def test_weekly_report_uses_dashboard_default_filename(monkeypatch, tmp_path):
@@ -138,6 +148,33 @@ def test_weekly_report_uses_safe_dash_for_zero_kpi_denominators(tmp_path):
     assert _percentage(summary.attribution_coverage_numerator, summary.attribution_coverage_denominator) == "—"
 
 
+def test_weekly_report_renders_complete_week_insight_evidence(tmp_path):
+    base = summarize_week([], Week(date(2026, 8, 17)), AgentLookup({}, {}), tmp_path / "missing.sqlite3")
+    current = replace(
+        base,
+        preliminary=False,
+        calls=20,
+        eligible_inbound_calls=20,
+        outcomes={**base.outcomes, "Voicemail": 3},
+    )
+    prior = replace(
+        base,
+        preliminary=False,
+        calls=20,
+        eligible_inbound_calls=20,
+        outcomes={**base.outcomes, "Voicemail": 1},
+    )
+    output = tmp_path / "insights.pdf"
+
+    render_weekly_report(current, prior, output)
+
+    content = output.read_bytes()
+    assert b"Voicemail rate: significant weekly rate change" in content
+    assert b"3/20" in content
+    assert b"1/20" in content
+    assert b"+10 percentage points" in content
+
+
 def test_weekly_report_accepts_non_monday(monkeypatch, tmp_path):
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(tmp_path / "agents.csv"))
     (tmp_path / "agents.csv").write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
@@ -209,4 +246,4 @@ def test_combined_dashboard_has_separate_department_outcomes_and_hour_labels(tmp
     assert b"Daily Membership call outcomes" not in content
     assert b"08:00" in content
     assert b"Casey" in content
-    assert content.count(b"/Type /Page\n") == 3
+    assert content.count(b"/Type /Page\n") == 4

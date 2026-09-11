@@ -50,7 +50,7 @@ uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 ```
 
 `--week-start` accepts any ISO date (`YYYY-MM-DD`) as the start of a seven-day
-historical period. By default, the printable three-page Letter PDF is written as
+historical period. By default, the printable four-page Letter PDF is written as
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; use `--output PATH` to choose a
 different location.
 
@@ -167,7 +167,8 @@ after-hours, weekend, holiday, and voicemail-only calls.
 It includes reporting-period, data-through, and generation timestamps; separate
 Membership and Certification stacked weekday outcome charts and reconciliation
 tables (omitted for a department with no calls); combined coverage, routing,
-hunt-group, and heatmap views; and a manager-only agent table. A cross-department
+hunt-group, and heatmap views; a manager-only agent table; and a fourth-page
+automated-insights section. A cross-department
 call appears in each matching department's outcome detail. `Yes` means only `Confirmed human answered`; forwarded
 or routing-only calls never count as `Yes`. It shows forwarded/routing-only,
 voicemail, connected/unknown attribution, answered/unattributed, ambiguous,
@@ -207,6 +208,16 @@ A week is marked **PRELIMINARY** unless valid report-period metadata in
 or gapped metadata keeps the label visible even when candidate calls exist.
 “Data through” is the latest continuous metadata-confirmed coverage boundary in
 the selected week, shown in Central Time.
+
+The automated-insights page compares only the combined-scope voicemail rate and
+confirmed-human-answer rate. It calls a weekly rate change significant only when
+both weeks have at least 20 scoped calls and the change is at least 10 percentage
+points. If that rate threshold is reached with a smaller week, it shows the
+counts and rates but explicitly makes no significance claim. If either week is
+**PRELIMINARY**, it shows coverage and data-through information only and
+suppresses all trend observations. If no rule is met, it says so plainly. This
+page never displays phone numbers and makes no agent-miss, wait-time,
+speed-of-answer, or outbound claims.
 
 ## Troubleshooting
 
