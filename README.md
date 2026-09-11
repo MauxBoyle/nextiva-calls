@@ -75,6 +75,9 @@ cp .env.example .env
   `NEXTIVA_STATE_FILE` is omitted, `NextivaCallData.state.json` is created beside
   that CSV. `NEXTIVA_METADATA_FILE` and `NEXTIVA_ANALYSIS_FILE` similarly default
   to `NextivaCallData.metadata.sqlite3` and `NextivaCallData.analysis.csv`.
+  The metadata database is a tracked import-audit file: an intentional import can
+  update it, so include its change in the related Git commit rather than deleting
+  it to make the working tree clean.
   `NEXTIVA_CANDIDATE_CALLS_FILE` defaults to
   `NextivaCallData.candidate-calls.csv` beside the raw export.
 - Routing defaults: `NEXTIVA_MEMBERSHIP_HUNT_GROUP=Membership` and

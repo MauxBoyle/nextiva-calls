@@ -144,7 +144,10 @@ repeat report sent in a different email is associated with its original report b
 does not add rows. Missing or malformed labelled periods, reversed periods, and
 overlap with an earlier period log warnings while retaining valid calls. Back up
 the metadata database along with the raw CSV; if it is corrupt, restore it before
-retrying rather than deleting the audit trail.
+retrying rather than deleting the audit trail. `NextivaCallData.metadata.sqlite3`
+is tracked in Git. A successful import can update it, so review and commit an
+intentional change with the related import work instead of deleting the file to
+make the working tree clean.
 
 ## Candidate-call reconstruction
 
