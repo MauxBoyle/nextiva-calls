@@ -82,6 +82,37 @@ def test_new_outcomes_stay_conservative_in_chart(tmp_path):
     assert summary.weekday_outcomes[("Mon", "Unknown / Ambiguous")] == 5
 
 
+def test_conservative_answer_kpi_and_attribution_coverage(tmp_path):
+    rows = [
+        row(),
+        row(outcome="Forwarded / routing only", confirmed_answered_agent_destinations=""),
+        row(outcome="Voicemail", confirmed_answered_agent_destinations=""),
+        row(outcome="Unknown", confirmed_answered_agent_destinations=""),
+        row(outcome="Ambiguous", confirmed_answered_agent_destinations=""),
+        row(outcome="Connected / unknown attribution", confirmed_answered_agent_destinations=""),
+        row(outcome="Answered / unattributed", confirmed_answered_agent_destinations=""),
+    ]
+
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+
+    assert summary.eligible_inbound_calls == 7
+    assert summary.confirmed_known_agent_answers == 1
+    assert summary.connected_calls == 4
+    assert summary.attribution_coverage_numerator == 1
+    assert summary.attribution_coverage_denominator == 4
+    assert summary.weekday_outcomes[("Mon", "Yes")] == 1
+
+
+def test_conservative_answer_kpi_handles_zero_denominators(tmp_path):
+    summary = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+
+    assert summary.eligible_inbound_calls == 0
+    assert summary.confirmed_known_agent_answers == 0
+    assert summary.connected_calls == 0
+    assert summary.attribution_coverage_numerator == 0
+    assert summary.attribution_coverage_denominator == 0
+
+
 def test_load_candidates_rejects_legacy_header(tmp_path):
     path = tmp_path / "legacy.csv"
     path.write_text("candidate_id,possible_answering_destinations\none,15550101\n", encoding="utf-8")

@@ -63,19 +63,28 @@ elsewhere.
 
 Membership metrics include calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP` plus calls
 that offer an exact lookup phone-number match or a uniquely mapped final-four
-extension. Other calls do not affect Membership outcomes, coverage, heatmaps,
-routing, or agent metrics. The hunt-group table is the exception: it compares
+extension. Every Membership-scoped call is in the headline denominator,
+including after-hours, weekend, holiday, and voicemail-only calls. Other calls
+do not affect Membership outcomes, coverage, heatmaps, routing, or agent
+metrics. The hunt-group table is the exception: it compares
 all in-period candidates limited to Reception, Membership, Certification, and
 Bookstore.
 
 The PDF includes period, data-through, and generation timestamps; a stacked
 weekday outcome chart, durations, routing attempts, coverage, hunt groups, and
-weekday/hour views. The chart has `Yes` (human or forwarded answer), `No`
-(unanswered), and `Voicemail` segments, adding `Unknown / Ambiguous` only when
-needed for accurate totals. Its manager-only agent table shows the top five
+weekday/hour views. The chart's `Yes` bucket contains only `Confirmed human
+answered`; forwarding or routing-only activity does not count as an answer. It
+shows forwarded/routing-only, voicemail, connected/unknown attribution,
+answered/unattributed, ambiguous, unknown, and unanswered outcomes separately.
+The chart has `No` (unanswered) and `Voicemail` segments, adding `Unknown /
+Ambiguous` only when needed for accurate totals. Its manager-only agent table shows the top five
 lookup-listed named agents by answers, then name, plus `Other / Unattributed`;
-it states how many further agents were omitted. It never displays customer or
-agent phone numbers or repeat callers.
+it states how many further agents were omitted. Attribution coverage is
+`confirmed known-agent answers / connected calls`, where connected calls are
+confirmed human answers plus `Connected / unknown attribution`, `Answered /
+unattributed`, and `Ambiguous` outcomes; forwarded/routing-only calls are not
+connected. A zero denominator is displayed as a dash. It never displays
+customer or agent phone numbers or repeat callers.
 It contains no outbound, speed-of-answer, wait-time, or “agent miss” metrics.
 Each offered destination is an agent offer. A named agent receives answer credit
 only if exactly one known agent is the sole possible answer destination.
