@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from statistics import median
+from typing import Literal
 
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
 from nextiva_calls.segments import CENTRAL_TIME, CLOSURE_DATES_2026, AgentLookup
@@ -29,6 +30,8 @@ HUNT_GROUPS = ("Reception", "Membership", "Certification", "Bookstore")
 OUTCOME_BUCKETS = ("Yes", "No", "Voicemail", "Unknown / Ambiguous")
 REPORTING_DEPARTMENTS = ("Membership", "Certification")
 COMBINED_SCOPE = "combined"
+MINIMUM_INSIGHT_CALLS = 20
+MATERIAL_RATE_CHANGE_POINTS = 10
 
 
 @dataclass(frozen=True)
@@ -89,6 +92,137 @@ class WeeklySummary:
     routing_attempt_distribution: dict[int, int]
     anomalies: dict[str, int]
     data_through: datetime | None
+
+
+@dataclass(frozen=True)
+class WeeklyInsight:
+    """A privacy-safe observation calculated before PDF layout begins."""
+
+    kind: Literal["coverage", "significant_change", "low_sample", "no_observation"]
+    metric: str | None
+    current_count: int | None
+    current_denominator: int | None
+    prior_count: int | None
+    prior_denominator: int | None
+    percentage_point_change: float | None
+    text: str
+
+
+def _insight_period(week: Week) -> str:
+    return f"{week.start:%b %-d, %Y}–{week.end:%b %-d, %Y}"
+
+
+def _insight_data_through(summary: WeeklySummary) -> str:
+    if summary.data_through is None:
+        return "no continuous metadata-confirmed coverage"
+    inclusive = summary.data_through - timedelta(minutes=1)
+    return f"{inclusive:%b %-d, %Y %-I:%M %p} CT"
+
+
+def _rate_insight(
+    *,
+    metric: str,
+    current_count: int,
+    prior_count: int,
+    current: WeeklySummary,
+    prior: WeeklySummary,
+) -> WeeklyInsight | None:
+    """Build one rate observation when its documented threshold is reached."""
+    current_total, prior_total = current.eligible_inbound_calls, prior.eligible_inbound_calls
+    if not current_total or not prior_total:
+        return None
+    current_rate, prior_rate = current_count / current_total, prior_count / prior_total
+    change = (current_rate - prior_rate) * 100
+    if abs(change) < MATERIAL_RATE_CHANGE_POINTS:
+        return None
+    evidence = (
+        f"Current ({_insight_period(current.week)}): {current_count}/{current_total} "
+        f"({current_rate:.0%}); prior ({_insight_period(prior.week)}): "
+        f"{prior_count}/{prior_total} ({prior_rate:.0%}); change: {change:+.0f} percentage points."
+    )
+    if current_total >= MINIMUM_INSIGHT_CALLS and prior_total >= MINIMUM_INSIGHT_CALLS:
+        return WeeklyInsight(
+            kind="significant_change",
+            metric=metric,
+            current_count=current_count,
+            current_denominator=current_total,
+            prior_count=prior_count,
+            prior_denominator=prior_total,
+            percentage_point_change=change,
+            text=f"{metric}: significant weekly rate change under the documented rule. {evidence}",
+        )
+    return WeeklyInsight(
+        kind="low_sample",
+        metric=metric,
+        current_count=current_count,
+        current_denominator=current_total,
+        prior_count=prior_count,
+        prior_denominator=prior_total,
+        percentage_point_change=change,
+        text=(
+            f"{metric}: rate change met the 10-percentage-point threshold, but no significance claim is made "
+            f"because at least one week has fewer than {MINIMUM_INSIGHT_CALLS} scoped calls. {evidence}"
+        ),
+    )
+
+
+def build_weekly_insights(current: WeeklySummary, prior: WeeklySummary) -> tuple[WeeklyInsight, ...]:
+    """Return only documented, privacy-safe observations for the combined scope.
+
+    A preliminary week means metadata coverage is incomplete, so this function
+    returns coverage information only and intentionally suppresses rate trends.
+    """
+    if current.preliminary or prior.preliminary:
+        return (
+            WeeklyInsight(
+                kind="coverage",
+                metric=None,
+                current_count=None,
+                current_denominator=None,
+                prior_count=None,
+                prior_denominator=None,
+                percentage_point_change=None,
+                text=(
+                    "PRELIMINARY coverage: trend observations are suppressed because metadata coverage is incomplete. "
+                    f"Current week data through: {_insight_data_through(current)}. "
+                    f"Prior week data through: {_insight_data_through(prior)}."
+                ),
+            ),
+        )
+    observations = tuple(
+        insight
+        for insight in (
+            _rate_insight(
+                metric="Voicemail rate",
+                current_count=current.outcomes["Voicemail"],
+                prior_count=prior.outcomes["Voicemail"],
+                current=current,
+                prior=prior,
+            ),
+            _rate_insight(
+                metric="Confirmed-human-answer rate",
+                current_count=current.confirmed_known_agent_answers,
+                prior_count=prior.confirmed_known_agent_answers,
+                current=current,
+                prior=prior,
+            ),
+        )
+        if insight is not None
+    )
+    if observations:
+        return observations
+    return (
+        WeeklyInsight(
+            kind="no_observation",
+            metric=None,
+            current_count=None,
+            current_denominator=None,
+            prior_count=None,
+            prior_denominator=None,
+            percentage_point_change=None,
+            text="No automated observations met the documented rules.",
+        ),
+    )
 
 
 def week_for(day: date | None = None) -> Week:

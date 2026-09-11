@@ -57,7 +57,7 @@ uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 ```
 
 `--week-start` accepts any date in `YYYY-MM-DD` format as the beginning of a
-seven-day historical period. The default output is the printable three-page Letter PDF
+seven-day historical period. The default output is the printable four-page Letter PDF
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
 elsewhere.
 
@@ -73,7 +73,8 @@ Bookstore.
 
 The PDF includes period, data-through, and generation timestamps; separate
 Membership and Certification daily outcome charts and reconciliation tables,
-plus combined coverage, routing, hunt groups, and weekday/hour views. Outcome
+plus combined coverage, routing, hunt groups, weekday/hour views, and a fourth
+automated-insights page. Outcome
 detail is omitted when a department has no calls; a cross-department call appears
 in both matching department outcome views. The chart's `Yes` bucket contains only `Confirmed human
 answered`; forwarding or routing-only activity does not count as an answer. It
@@ -103,6 +104,18 @@ database do not continuously cover every moment of either selected week. Missing
 invalid, or gapped metadata therefore keeps the label even if calls are present.
 “Data through” shows the selected week’s latest continuous metadata-confirmed
 coverage boundary in Central Time.
+
+The automated-insights page has documented, deliberately narrow rules. It
+compares only combined-scope voicemail rate and confirmed-human-answer rate. A
+change is called significant only if both weeks have at least 20 scoped calls
+and the rate differs by at least 10 percentage points. When the 10-point change
+is present but either week has fewer than 20 calls, the page shows counts and
+rates but clearly makes no significance claim. If either comparison week is
+**PRELIMINARY**, all trend observations are suppressed; only coverage and
+data-through information appears. If no rule produces an observation, the page
+says that no automated observations met the documented rules. It includes no
+phone numbers and makes no agent-miss, wait-time, speed-of-answer, or outbound
+claims.
 
 ## Processing behavior
 
