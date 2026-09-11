@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
+from datetime import date
 from email import policy
 from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
@@ -17,15 +18,11 @@ from nextiva_calls.email_reports import (
     extract_report_url,
     report_identifier,
 )
+from nextiva_calls.holiday_calendar import resolve_holiday_calendar
 from nextiva_calls.mailbox import ImapMailbox, RawMessage
 from nextiva_calls.records import CallRecord
 from nextiva_calls.report import ReportError, ReportResult, load_report
-from nextiva_calls.segments import (
-    AgentLookupError,
-    ClosureDatesError,
-    load_agent_lookup,
-    load_closure_dates,
-)
+from nextiva_calls.segments import AgentLookupError, load_agent_lookup
 from nextiva_calls.storage import (
     MetadataStore,
     StorageError,
@@ -67,10 +64,19 @@ def run_import(
         lookup = load_agent_lookup(config.agent_lookup_file)
     except AgentLookupError as error:
         raise StorageError("Agent lookup file is invalid") from error
+    year = date.today().year
     try:
-        closure_dates = load_closure_dates(config.closure_dates_file)
-    except ClosureDatesError as error:
-        raise StorageError("Closure dates file is invalid") from error
+        holiday_calendar, cached_calendar = resolve_holiday_calendar(
+            date(year, 1, 1),
+            date(year, 12, 31),
+            cache_path=config.holiday_cache_file,
+            overrides_path=config.closure_dates_file,
+            url=config.opm_calendar_url,
+        )
+    except ValueError as error:
+        raise StorageError("Holiday calendar is unavailable") from error
+    if cached_calendar:
+        logger.warning("Using cached OPM holiday calendar after refresh failure")
     processed = state_reader(config.state_file)
     metadata_path = config.metadata_file or config.output_file.with_suffix(
         ".metadata.sqlite3"
@@ -176,7 +182,7 @@ def run_import(
                 records=result.records,
             )
             written = save_analysis(
-                analysis_path, config.output_file, lookup, closure_dates
+                analysis_path, config.output_file, lookup, holiday_calendar
             )
             save_candidate_calls(
                 candidate_path,

@@ -9,14 +9,10 @@ from pathlib import Path
 from loguru import logger
 
 from nextiva_calls.config import Config, ConfigError
+from nextiva_calls.holiday_calendar import resolve_holiday_calendar
 from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import MailboxError
-from nextiva_calls.segments import (
-    AgentLookupError,
-    ClosureDatesError,
-    load_agent_lookup,
-    load_closure_dates,
-)
+from nextiva_calls.segments import AgentLookupError, load_agent_lookup
 from nextiva_calls.storage import StorageError
 
 
@@ -40,6 +36,8 @@ def _weekly_parser() -> argparse.ArgumentParser:
 
 def _run_weekly_report(arguments: list[str]) -> int:
     """Generate a weekly PDF without requiring mailbox credentials."""
+    from nextiva_calls.reconstruction import MEMBERSHIP_SIMULTANEOUS_FROM
+    from nextiva_calls.storage import save_candidate_calls
     from nextiva_calls.weekly_metrics import (
         load_candidates,
         parse_week_start,
@@ -47,8 +45,6 @@ def _run_weekly_report(arguments: list[str]) -> int:
         week_for,
     )
     from nextiva_calls.weekly_report import render_weekly_report
-    from nextiva_calls.reconstruction import MEMBERSHIP_SIMULTANEOUS_FROM
-    from nextiva_calls.storage import save_candidate_calls
 
     parsed = _weekly_parser().parse_args(arguments)
     week = parse_week_start(parsed.week_start) if parsed.week_start else week_for()
@@ -68,8 +64,11 @@ def _run_weekly_report(arguments: list[str]) -> int:
     lookup_value = os.environ.get("NEXTIVA_AGENT_LOOKUP_FILE", "").strip()
     if not lookup_value:
         raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE is required for weekly reports")
-    closure_dates_file = Path(
-        os.environ.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv").strip()
+    overrides_file = Path(
+        os.environ.get(
+            "NEXTIVA_HOLIDAY_OVERRIDES_FILE",
+            os.environ.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv"),
+        ).strip()
     )
     membership_hunt_group = os.environ.get(
         "NEXTIVA_MEMBERSHIP_HUNT_GROUP", "Membership"
@@ -80,7 +79,19 @@ def _run_weekly_report(arguments: list[str]) -> int:
         f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
     )
     lookup = load_agent_lookup(Path(lookup_value))
-    closure_dates = load_closure_dates(closure_dates_file)
+    cache = Path(
+        os.environ.get("NEXTIVA_HOLIDAY_CACHE_FILE", "")
+        or raw.with_suffix(".opm-holidays.ics")
+    )
+    holiday_calendar, used_cache = resolve_holiday_calendar(
+        week.prior.start,
+        week.end,
+        cache_path=cache,
+        overrides_path=overrides_file,
+        url=os.environ.get("NEXTIVA_OPM_CALENDAR_URL", "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics"),
+    )
+    if used_cache:
+        logger.warning("Using cached OPM holiday calendar after refresh failure")
     try:
         rows = load_candidates(candidates)
     except StorageError as error:
@@ -99,11 +110,11 @@ def _run_weekly_report(arguments: list[str]) -> int:
         )
         rows = load_candidates(candidates)
     render_weekly_report(
-        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined", closure_dates),
-        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined", closure_dates),
+        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined", holiday_calendar),
+        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined", holiday_calendar),
         output,
-        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", closure_dates),
-        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", closure_dates),
+        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", holiday_calendar),
+        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar),
     )
     logger.info("Wrote weekly report to {}", output)
     return 0

@@ -11,6 +11,7 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+from nextiva_calls.holiday_calendar import HolidayCalendar
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS, reconstruct_calls
 from nextiva_calls.records import CSV_COLUMNS, CallRecord, clean_text
 from nextiva_calls.segments import ANALYSIS_COLUMNS, AgentLookup, clean_segment
@@ -117,6 +118,7 @@ def save_analysis(
     path: Path,
     raw_path: Path,
     lookup: AgentLookup,
+    holiday_calendar: HolidayCalendar | None = None,
     closure_dates: frozenset[str] | None = None,
 ) -> int:
     """Atomically derive enriched, first-seen unique segments from raw data."""
@@ -134,9 +136,12 @@ def save_analysis(
             writer = csv.writer(stream)
             writer.writerow(ANALYSIS_COLUMNS)
             writer.writerows(
-                clean_segment(row, lookup, closure_dates)
-                if closure_dates is not None
-                else clean_segment(row, lookup)
+                clean_segment(
+                    row,
+                    lookup,
+                    holiday_calendar=holiday_calendar,
+                    closure_dates=closure_dates,
+                )
                 for row in unique
             )
             stream.flush()

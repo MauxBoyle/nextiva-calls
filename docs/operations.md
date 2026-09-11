@@ -17,7 +17,7 @@ shown. Treat a preliminary report as a snapshot, not a completed trend.
 
 ## Daily import checklist
 
-1. Check that `.env` has the email settings and that lookup and closure CSV
+1. Check that `.env` has the email settings and that lookup and holiday-override CSV
    paths exist. Never share or commit `.env`; it contains an app password.
 2. Run `uv run --env-file .env nextiva_calls`.
 3. Confirm the final log says `Import complete` and the command exits with
@@ -43,7 +43,10 @@ This writes `reports/Nextiva_Weekly_<start>_to_<end>.pdf` for the seven complete
 days ending yesterday and compares it to the prior seven days. To recreate a
 specific week, use `--week-start 2026-08-17`. Confirm the PDF opens, has the
 expected period, and visibly review **PRELIMINARY** and “Data through” before
-sharing. An invalid closure file fails before derived files or a PDF are written.
+sharing. OPM's official federal-holiday iCalendar feed is refreshed on every run,
+including published observed dates. If refresh fails, a validated local cache is
+used only when it covers the requested period; otherwise the run stops before
+derived files or a PDF are written.
 
 ## What the PDF means
 
@@ -86,16 +89,18 @@ at PDF-generation time is authoritative.
 ### Update closures
 
 Edit the versioned `closure_dates.csv` (or the file named by
-`NEXTIVA_CLOSURE_DATES_FILE`) with exactly one column:
+`NEXTIVA_HOLIDAY_OVERRIDES_FILE`) with exactly these columns:
 
 ```csv
-date
-2026-12-24
+date,name,status
+2026-12-24,Winter break,closed
+2026-09-07,Office open,open
 ```
 
-Use one unique `YYYY-MM-DD` date per row: no blanks or extra columns. Run an
-import or weekly report to validate it. Because closures alter classifications,
-run an import to regenerate analysis and candidate data before reporting that period.
+Use one unique `YYYY-MM-DD` date per row. `closed` adds or replaces a closure;
+`open` explicitly reopens an OPM closure. Run an import or weekly report to
+validate it. Because closures alter classifications, run an import to regenerate
+analysis and candidate data before reporting that period.
 
 ### Change Membership routing
 

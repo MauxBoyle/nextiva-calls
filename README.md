@@ -67,9 +67,16 @@ cp .env.example .env
   externally supplied CSV with exactly `phone_number`, `display_name`,
   `department`, and `destination_type` headers. Types are `agent` or `system`;
   values must be nonblank, phone values valid, and mappings non-conflicting.
-- Closure calendar: `NEXTIVA_CLOSURE_DATES_FILE=closure_dates.csv` by default.
-  It must be a one-column CSV headed `date`, with unique `YYYY-MM-DD` dates;
-  imports and weekly reports validate it before creating derived output.
+- Holiday calendar: each import and weekly report refreshes OPM's official
+  [federal-holiday iCalendar feed](https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/).
+  The validated response is cached locally (`NEXTIVA_HOLIDAY_CACHE_FILE`, beside
+  the raw CSV by default). If refresh fails, only a cache that covers the report
+  period can be used; otherwise the run stops clearly rather than treating days
+  as open. OPM's observed dates are used as published.
+- Organization changes live in `NEXTIVA_HOLIDAY_OVERRIDES_FILE=closure_dates.csv`
+  (the older `NEXTIVA_CLOSURE_DATES_FILE` name remains an alias). It must be a
+  unique `date,name,status` CSV. `closed` adds or replaces a closure and `open`
+  explicitly reopens an OPM closure.
 - Mail defaults: `EMAIL_IMAP_SERVER=imap.gmail.com` and
   `NEXTIVA_EMAIL_SENDER=analytics@nextiva.com`.
 - Security and timing defaults: `NEXTIVA_ALLOWED_HOSTS=ct.nextiva.com` and
@@ -137,8 +144,8 @@ then `Voicemail`, `Unanswered`, or `Unknown`. Invalid and conflicting data never
 becomes a human answer.
 
 Business hours are Monday through Friday from 9:00 AM (inclusive) to 5:00 PM
-(exclusive), Central Time, excluding 2026 closures: Jan 1, Jan 19, Feb 16, May
-25, Jun 19, Jul 3, Sep 7, Oct 12, Nov 11, Nov 26–27, and Dec 25.
+(exclusive), Central Time, excluding closures from the refreshed OPM calendar
+and any organization-specific overrides.
 
 The metadata SQLite database records report periods, import time, warnings,
 source-message IDs, and the relationship between every report and its call

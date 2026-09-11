@@ -82,11 +82,22 @@ class StackedBarChart(Flowable):
             (summary.week.start + timedelta(days=offset)).strftime("%a")
             for offset in range(7)
         )
+        self.day_labels = tuple(
+            self._day_label(summary.week.start + timedelta(days=offset))
+            for offset in range(7)
+        )
         self.buckets = [
             bucket for bucket in OUTCOME_BUCKETS
             if bucket != "Unknown / Ambiguous"
             or any(summary.weekday_outcomes[(day, bucket)] for day in self.days)
         ]
+
+    def _day_label(self, day) -> str:
+        holiday = self.summary.holidays
+        matching = next((item for item in holiday if item.day == day), None)
+        if matching is None:
+            return day.strftime("%a")
+        return f"{day:%a} — {matching.name} (closed)"
 
     def draw(self) -> None:
         canvas = self.canv
@@ -110,7 +121,7 @@ class StackedBarChart(Flowable):
         bar_width = step * .62
         canvas.setStrokeColor(colors.HexColor("#9BAAB5"))
         canvas.line(left, bottom, self.width - 4, bottom)
-        for index, (day, total) in enumerate(zip(self.days, totals, strict=True)):
+        for index, (day, label, total) in enumerate(zip(self.days, self.day_labels, totals, strict=True)):
             x, stacked = left + index * step + (step - bar_width) / 2, 0
             for bucket in self.buckets:
                 value = self.summary.weekday_outcomes[(day, bucket)]
@@ -120,7 +131,12 @@ class StackedBarChart(Flowable):
                     canvas.rect(x, bottom + stacked, bar_width, height, fill=1, stroke=0)
                     stacked += height
             canvas.setFillColor(colors.black)
+            canvas.setFont("Helvetica", 5.2 if len(label) > 8 else 6.5)
             canvas.drawCentredString(x + bar_width / 2, 2, day)
+            if label != day:
+                # Retain the full date-aware label in the PDF text layer even
+                # where a compact chart needs its weekday abbreviation below.
+                canvas.drawCentredString(x + bar_width / 2, 8, label)
             if total:
                 canvas.drawCentredString(x + bar_width / 2, bottom + stacked + 2, str(total))
 
@@ -134,6 +150,10 @@ def _metadata_text(summary: WeeklySummary) -> str:
         return "Data through: no continuous metadata-confirmed coverage"
     inclusive = summary.data_through - timedelta(minutes=1)
     return f"Data through: {inclusive:%b %-d, %Y %-I:%M %p} CT"
+
+
+def _closure_names(summary: WeeklySummary) -> str:
+    return "; ".join(f"{item.day:%a, %b %-d}: {item.name} (closed)" for item in summary.holidays)
 
 
 def _offer_answer_rate(values: dict[str, int]) -> str:
@@ -201,6 +221,19 @@ def render_weekly_report(
     story.append(Paragraph(f"Reporting period: <b>{period}</b> (Central Time)<br/>Prior period: {prior_period}<br/>{_metadata_text(current)}<br/>Generated: {generated_at:%b %-d, %Y %-I:%M %p %Z}", styles["Normal"]))
     if current.preliminary or prior.preliminary:
         story.extend([Spacer(1, .06 * inch), Paragraph("<font color='#A61B1B'><b>PRELIMINARY</b></font> — metadata coverage is incomplete for one or both comparison weeks. Use directional results with care.", styles["Normal"])])
+    comparison_closures = [
+        text
+        for text in (_closure_names(current), _closure_names(prior))
+        if text
+    ]
+    caution = "No closures are listed in either comparison week."
+    if comparison_closures:
+        caution = "Closures can affect week-over-week volume: " + " | ".join(comparison_closures)
+    story.extend([Spacer(1, .04 * inch), Paragraph(f"<b>Calendar caution:</b> {caution}", styles["Tiny"])])
+    if current.calendar_coverage_warning or prior.calendar_coverage_warning:
+        story.append(Paragraph("<b>Calendar coverage warning:</b> the available holiday calendar does not extend beyond one or both comparison periods.", styles["Tiny"]))
+    if current.holidays:
+        story.append(Paragraph(f"<b>Current-week closure note:</b> {_closure_names(current)}", styles["Tiny"]))
     _heading(story, styles, "Combined Membership + Certification headline metrics")
     confirmed = "Confirmed human answered"
     story.append(_table([["Measure", "Current", "Prior", "Change"], ["All scoped inbound calls", current.eligible_inbound_calls, prior.eligible_inbound_calls, _delta(current.eligible_inbound_calls-prior.eligible_inbound_calls)], [confirmed, current.confirmed_known_agent_answers, prior.confirmed_known_agent_answers, _delta(current.confirmed_known_agent_answers-prior.confirmed_known_agent_answers)], ["% confirmed human answered", _percentage(current.confirmed_known_agent_answers, current.eligible_inbound_calls), _percentage(prior.confirmed_known_agent_answers, prior.eligible_inbound_calls), _percentage_delta(current.confirmed_known_agent_answers, current.eligible_inbound_calls, prior.confirmed_known_agent_answers, prior.eligible_inbound_calls)], ["Attribution coverage", _percentage(current.attribution_coverage_numerator, current.attribution_coverage_denominator), _percentage(prior.attribution_coverage_numerator, prior.attribution_coverage_denominator), _percentage_delta(current.attribution_coverage_numerator, current.attribution_coverage_denominator, prior.attribution_coverage_numerator, prior.attribution_coverage_denominator)], ["Answered-call talk time", _seconds(current.answered_talk_seconds), _seconds(prior.answered_talk_seconds), _seconds(current.answered_talk_seconds-prior.answered_talk_seconds)]], [2.6*inch, 1.25*inch, 1.25*inch, 1.25*inch]))
