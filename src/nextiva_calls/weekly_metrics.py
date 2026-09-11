@@ -12,7 +12,7 @@ from statistics import median
 from typing import Literal
 
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
-from nextiva_calls.segments import CENTRAL_TIME, CLOSURE_DATES_2026, AgentLookup
+from nextiva_calls.segments import CENTRAL_TIME, AgentLookup
 from nextiva_calls.storage import StorageError
 
 OUTCOMES = (
@@ -265,8 +265,8 @@ def _timestamp(value: str) -> datetime | None:
     return parsed.astimezone(CENTRAL_TIME)
 
 
-def _category(when: datetime) -> str:
-    if when.date().isoformat() in CLOSURE_DATES_2026:
+def _category(when: datetime, closure_dates: frozenset[str] = frozenset()) -> str:
+    if when.date().isoformat() in closure_dates:
         return "Holiday"
     if when.weekday() >= 5:
         return "Weekend"
@@ -424,6 +424,7 @@ def summarize_week(
     metadata_path: Path,
     membership_hunt_group: str = "Membership",
     scope: str = "Membership",
+    closure_dates: frozenset[str] = frozenset(),
 ) -> WeeklySummary:
     """Summarize one approved department scope in a Central-time week.
 
@@ -458,7 +459,7 @@ def summarize_week(
             "Ambiguous",
         )
     )
-    categories = Counter(_category(when) for _, when in selected)
+    categories = Counter(_category(when, closure_dates) for _, when in selected)
     weekdays = Counter(when.strftime("%a") for _, when in selected)
     hours = Counter(when.hour for _, when in selected)
     weekday_hours = Counter((when.strftime("%a"), when.hour) for _, when in selected)

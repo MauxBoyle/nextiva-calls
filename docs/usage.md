@@ -20,6 +20,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `EMAIL_APP_PASSWORD` | Yes | — | Google app password |
 | `NEXTIVA_EMAIL_SUBJECT` | Yes | — | Exact decoded subject |
 | `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | Role-aware destination lookup CSV |
+| `NEXTIVA_CLOSURE_DATES_FILE` | No | `closure_dates.csv` | Manager-maintained closure-date CSV |
 | `EMAIL_IMAP_SERVER` | No | `imap.gmail.com` | IMAP hostname |
 | `NEXTIVA_EMAIL_SENDER` | No | `analytics@nextiva.com` | Exact sender address |
 | `NEXTIVA_ALLOWED_HOSTS` | No | `ct.nextiva.com` | Comma-separated exact HTTPS hosts |
@@ -60,6 +61,9 @@ uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
 seven-day historical period. The default output is the printable four-page Letter PDF
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
 elsewhere.
+
+For the repeatable operating routine, metric definitions, safe configuration
+changes, and failure handling, see the [manager operating runbook](operations.md).
 
 Headline metrics, business-hours coverage, and the heatmap include the combined
 union of calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP`, the literal `Certification`
@@ -154,10 +158,11 @@ numbers are digits-only and never shortened. Destinations match full lookup
 numbers before uniquely mapped final-four extensions; otherwise their type is
 `unknown`. `9999` is voicemail regardless of lookup label. Naive timestamps use
 `America/Chicago`; offset-aware timestamps are converted to it. Business hours
-are weekdays from 9:00 AM inclusive through 5:00 PM exclusive CT, excluding the
-2026 closures Jan 1, Jan 19, Feb 16, May 25, Jun 19, Jul 3, Sep 7, Oct 12, Nov
-11, Nov 26–27, and Dec 25. Invalid timestamps and other row anomalies are kept
-and recorded in `anomaly_reasons`.
+are weekdays from 9:00 AM inclusive through 5:00 PM exclusive CT, excluding
+dates in `NEXTIVA_CLOSURE_DATES_FILE`. The CSV must have exactly one header,
+`date`, followed by unique ISO dates (`YYYY-MM-DD`); it is validated before
+imports and weekly PDFs are created. Invalid timestamps and other row anomalies
+are kept and recorded in `anomaly_reasons`.
 
 SQLite metadata records each report fingerprint, source message, Central-time
 labelled period, import time, warnings, and every report-to-call-segment link. A
@@ -194,6 +199,8 @@ Update `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
 `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` together when that business rule changes;
 the timestamp must be ISO-8601 and include its offset. Other hunt groups remain
 sequential.
+Reception, Certification, and Bookstore comparison groups are code-managed;
+request a developer change for them.
 
 Use the [versioned 20-row manual-validation checklist](candidate-call-validation-checklist-v1.csv)
 to compare candidate output with Nextiva evidence.

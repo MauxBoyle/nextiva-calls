@@ -34,6 +34,18 @@ def test_main_reports_missing_configuration_without_secret(monkeypatch, capfd):
     assert "SUPER_SECRET_VALUE" not in output
 
 
+def test_main_rejects_invalid_closure_calendar_before_import(monkeypatch, capfd):
+    set_required_env(monkeypatch)
+    monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", "missing-closures.csv")
+    monkeypatch.setattr(
+        app,
+        "run_import",
+        lambda _: pytest.fail("import should not begin with invalid closure settings"),
+    )
+    assert app.main() == 1
+    assert "NEXTIVA_CLOSURE_DATES_FILE" in capfd.readouterr().err
+
+
 @pytest.mark.parametrize(
     "error",
     [MailboxAuthenticationError("SUPER_SECRET_VALUE"), StorageError("broken state")],

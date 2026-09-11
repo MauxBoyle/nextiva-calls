@@ -34,6 +34,18 @@ def test_week_helpers():
     assert parse_week_start("2026-08-17") == Week(date(2026, 8, 17))
 
 
+def test_configured_closure_is_a_holiday_not_business_hours(tmp_path):
+    summary = summarize_week(
+        [row(call_timestamp_ct="2026-08-17T10:00:00-05:00")],
+        Week(date(2026, 8, 17)),
+        lookup(),
+        tmp_path / "missing.sqlite3",
+        closure_dates=frozenset({"2026-08-17"}),
+    )
+    assert summary.time_categories["Holiday"] == 1
+    assert summary.time_categories["Business hours"] == 0
+
+
 def insight_summary(tmp_path, *, calls, voicemail, confirmed, preliminary=False):
     """Small complete summary for testing insight rules without PDF layout."""
     base = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")

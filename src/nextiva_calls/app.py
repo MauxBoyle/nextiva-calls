@@ -11,7 +11,12 @@ from loguru import logger
 from nextiva_calls.config import Config, ConfigError
 from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import MailboxError
-from nextiva_calls.segments import AgentLookupError, load_agent_lookup
+from nextiva_calls.segments import (
+    AgentLookupError,
+    ClosureDatesError,
+    load_agent_lookup,
+    load_closure_dates,
+)
 from nextiva_calls.storage import StorageError
 
 
@@ -63,6 +68,9 @@ def _run_weekly_report(arguments: list[str]) -> int:
     lookup_value = os.environ.get("NEXTIVA_AGENT_LOOKUP_FILE", "").strip()
     if not lookup_value:
         raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE is required for weekly reports")
+    closure_dates_file = Path(
+        os.environ.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv").strip()
+    )
     membership_hunt_group = os.environ.get(
         "NEXTIVA_MEMBERSHIP_HUNT_GROUP", "Membership"
     ).strip()
@@ -72,6 +80,7 @@ def _run_weekly_report(arguments: list[str]) -> int:
         f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
     )
     lookup = load_agent_lookup(Path(lookup_value))
+    closure_dates = load_closure_dates(closure_dates_file)
     try:
         rows = load_candidates(candidates)
     except StorageError as error:
@@ -90,11 +99,11 @@ def _run_weekly_report(arguments: list[str]) -> int:
         )
         rows = load_candidates(candidates)
     render_weekly_report(
-        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined"),
-        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined"),
+        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined", closure_dates),
+        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined", closure_dates),
         output,
-        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership"),
-        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification"),
+        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", closure_dates),
+        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", closure_dates),
     )
     logger.info("Wrote weekly report to {}", output)
     return 0

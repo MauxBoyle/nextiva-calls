@@ -67,6 +67,9 @@ cp .env.example .env
   externally supplied CSV with exactly `phone_number`, `display_name`,
   `department`, and `destination_type` headers. Types are `agent` or `system`;
   values must be nonblank, phone values valid, and mappings non-conflicting.
+- Closure calendar: `NEXTIVA_CLOSURE_DATES_FILE=closure_dates.csv` by default.
+  It must be a one-column CSV headed `date`, with unique `YYYY-MM-DD` dates;
+  imports and weekly reports validate it before creating derived output.
 - Mail defaults: `EMAIL_IMAP_SERVER=imap.gmail.com` and
   `NEXTIVA_EMAIL_SENDER=analytics@nextiva.com`.
 - Security and timing defaults: `NEXTIVA_ALLOWED_HOSTS=ct.nextiva.com` and
@@ -153,6 +156,9 @@ For HTML messages, the importer identifies the report link by its visible
 such as navigation or footer links, are ignored.
 
 ## Weekly manager PDF
+
+For the day-to-day manager routine, safe configuration changes, metric
+definitions, and evidence procedures, use the [manager operating runbook](docs/operations.md).
 
 `weekly-report` compares a seven-day Central-time period with the preceding
 seven days. Its default period ends yesterday, avoiding partial current-day
