@@ -20,7 +20,9 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `EMAIL_APP_PASSWORD` | Yes | — | Google app password |
 | `NEXTIVA_EMAIL_SUBJECT` | Yes | — | Exact decoded subject |
 | `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | Role-aware destination lookup CSV |
-| `NEXTIVA_CLOSURE_DATES_FILE` | No | `closure_dates.csv` | Manager-maintained closure-date CSV |
+| `NEXTIVA_HOLIDAY_OVERRIDES_FILE` | No | `closure_dates.csv` | Local `date,name,status` closure/open overrides |
+| `NEXTIVA_HOLIDAY_CACHE_FILE` | No | beside raw CSV | Validated local copy of OPM's iCalendar feed |
+| `NEXTIVA_OPM_CALENDAR_URL` | No | OPM official feed | HTTPS OPM iCalendar source |
 | `EMAIL_IMAP_SERVER` | No | `imap.gmail.com` | IMAP hostname |
 | `NEXTIVA_EMAIL_SENDER` | No | `analytics@nextiva.com` | Exact sender address |
 | `NEXTIVA_ALLOWED_HOSTS` | No | `ct.nextiva.com` | Comma-separated exact HTTPS hosts |

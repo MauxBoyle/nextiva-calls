@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from dateutil.parser import ParserError
 from dateutil.parser import parse as parse_datetime
 
+from nextiva_calls.holiday_calendar import HolidayCalendar
 from nextiva_calls.records import CSV_COLUMNS, clean_text
 
 CENTRAL_TIME = ZoneInfo("America/Chicago")
@@ -69,15 +70,19 @@ def load_closure_dates(path: Path) -> frozenset[str]:
             rows = list(csv.reader(stream))
     except (OSError, UnicodeError, csv.Error) as error:
         raise ClosureDatesError("Closure dates file could not be read") from error
-    if not rows or rows[0] != ["date"]:
+    if not rows or rows[0] not in (["date"], ["date", "name", "status"]):
         raise ClosureDatesError("Closure dates file must have exactly a date header")
+    modern = rows[0] == ["date", "name", "status"]
     dates: set[str] = set()
+    seen: set[str] = set()
     for row_number, row in enumerate(rows[1:], start=2):
-        if len(row) != 1 or not row[0].strip():
+        if len(row) != (3 if modern else 1) or not row[0].strip():
             raise ClosureDatesError(
                 f"Closure dates row {row_number} must contain one nonblank date"
             )
         value = row[0].strip()
+        if modern and row[2].strip().casefold() not in {"open", "closed"}:
+            raise ClosureDatesError(f"Closure dates row {row_number} has invalid status")
         try:
             parsed = date.fromisoformat(value)
         except ValueError as error:
@@ -88,9 +93,11 @@ def load_closure_dates(path: Path) -> frozenset[str]:
             raise ClosureDatesError(
                 f"Closure dates row {row_number} must be YYYY-MM-DD"
             )
-        if value in dates:
+        if value in seen:
             raise ClosureDatesError(f"Closure dates file contains duplicate date {value}")
-        dates.add(value)
+        seen.add(value)
+        if not modern or row[2].strip().casefold() == "closed":
+            dates.add(value)
     return frozenset(dates)
 
 
@@ -188,9 +195,14 @@ def _normalized_answered(value: str) -> tuple[str, bool]:
 def clean_segment(
     row: tuple[str, ...],
     lookup: AgentLookup,
-    closure_dates: frozenset[str] = frozenset(),
+    holiday_calendar: HolidayCalendar | None = None,
+    closure_dates: frozenset[str] | None = None,
 ) -> tuple[str, ...]:
     """Enrich one raw row; anomalies remain available for analysis, not rejection."""
+    if isinstance(holiday_calendar, frozenset):
+        # Positional callers from the date-set API passed their set as the
+        # third argument before this parameter was named.
+        closure_dates, holiday_calendar = holiday_calendar, None
     name, called_at, duration, direction, answered, source, destination = row
     reasons: list[str] = []
     timestamp = _timestamp_ct(called_at)
@@ -226,7 +238,16 @@ def clean_segment(
     if not known_answered:
         reasons.append("unknown_answered")
 
-    holiday = timestamp is not None and timestamp.date().isoformat() in closure_dates
+    # ``closure_dates`` is retained for older library callers. Application
+    # flows pass the named calendar, which also gives a holiday its name.
+    holiday = bool(
+        timestamp is not None
+        and (
+            holiday_calendar is not None
+            and holiday_calendar.holiday_on(timestamp.date()) is not None
+            or closure_dates is not None and timestamp.date().isoformat() in closure_dates
+        )
+    )
     business_hours = bool(
         timestamp is not None
         and timestamp.weekday() < 5

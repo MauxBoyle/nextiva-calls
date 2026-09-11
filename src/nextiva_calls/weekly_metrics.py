@@ -11,6 +11,7 @@ from pathlib import Path
 from statistics import median
 from typing import Literal
 
+from nextiva_calls.holiday_calendar import Holiday, HolidayCalendar
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
 from nextiva_calls.segments import CENTRAL_TIME, AgentLookup
 from nextiva_calls.storage import StorageError
@@ -92,6 +93,8 @@ class WeeklySummary:
     routing_attempt_distribution: dict[int, int]
     anomalies: dict[str, int]
     data_through: datetime | None
+    holidays: tuple[Holiday, ...] = ()
+    calendar_coverage_warning: bool = False
 
 
 @dataclass(frozen=True)
@@ -265,8 +268,8 @@ def _timestamp(value: str) -> datetime | None:
     return parsed.astimezone(CENTRAL_TIME)
 
 
-def _category(when: datetime, closure_dates: frozenset[str] = frozenset()) -> str:
-    if when.date().isoformat() in closure_dates:
+def _category(when: datetime, holiday_calendar: HolidayCalendar | None = None) -> str:
+    if holiday_calendar is not None and holiday_calendar.holiday_on(when.date()) is not None:
         return "Holiday"
     if when.weekday() >= 5:
         return "Weekend"
@@ -424,7 +427,8 @@ def summarize_week(
     metadata_path: Path,
     membership_hunt_group: str = "Membership",
     scope: str = "Membership",
-    closure_dates: frozenset[str] = frozenset(),
+    holiday_calendar: HolidayCalendar | None = None,
+    closure_dates: frozenset[str] | None = None,
 ) -> WeeklySummary:
     """Summarize one approved department scope in a Central-time week.
 
@@ -459,7 +463,18 @@ def summarize_week(
             "Ambiguous",
         )
     )
-    categories = Counter(_category(when, closure_dates) for _, when in selected)
+    # Compatibility for third-party callers of the old date-set API.  The CLI
+    # and imports use ``holiday_calendar`` exclusively.
+    if holiday_calendar is None and closure_dates is not None:
+        legacy_entries = {
+            date.fromisoformat(value): Holiday(date.fromisoformat(value), "Closed")
+            for value in closure_dates
+        }
+        if legacy_entries:
+            holiday_calendar = HolidayCalendar(
+                legacy_entries, min(legacy_entries), max(legacy_entries), "legacy"
+            )
+    categories = Counter(_category(when, holiday_calendar) for _, when in selected)
     weekdays = Counter(when.strftime("%a") for _, when in selected)
     hours = Counter(when.hour for _, when in selected)
     weekday_hours = Counter((when.strftime("%a"), when.hour) for _, when in selected)
@@ -636,4 +651,14 @@ def summarize_week(
             for key in ("Ambiguous outcomes", "Unknown outcomes", "Unattributed answers")
         },
         data_through=_data_through(metadata_path, week),
+        holidays=(
+            holiday_calendar.closures_in(week.start, week.end)
+            if holiday_calendar is not None
+            else ()
+        ),
+        calendar_coverage_warning=(
+            holiday_calendar is None
+            or not holiday_calendar.covers(week.start, week.end)
+            or holiday_calendar.coverage_end <= week.end
+        ),
     )

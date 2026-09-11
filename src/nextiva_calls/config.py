@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from nextiva_calls.segments import ClosureDatesError, load_closure_dates
+from nextiva_calls.holiday_calendar import HolidayCalendarError, load_holiday_overrides
 
 
 class ConfigError(ValueError):
@@ -33,7 +33,11 @@ class Config:
     analysis_file: Path | None = None
     candidate_calls_file: Path | None = None
     agent_lookup_file: Path | None = None
+    # Kept as an attribute name for integrations from the earlier release; it
+    # now points at date,name,status holiday overrides.
     closure_dates_file: Path = Path("closure_dates.csv")
+    holiday_cache_file: Path = Path("opm_holidays.ics")
+    opm_calendar_url: str = "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics"
     membership_hunt_group: str = "Membership"
     membership_simultaneous_from: str = "2026-08-15T00:00:00-05:00"
 
@@ -130,14 +134,29 @@ class Config:
         lookup = Path(values["NEXTIVA_AGENT_LOOKUP_FILE"].strip())
         if lookup.name == "":
             raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE must name a file")
-        closure_value = values.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv").strip()
+        closure_value = values.get(
+            "NEXTIVA_HOLIDAY_OVERRIDES_FILE",
+            values.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv"),
+        ).strip()
         closure_dates = Path(closure_value)
         if closure_dates.name == "":
-            raise ConfigError("NEXTIVA_CLOSURE_DATES_FILE must name a file")
+            raise ConfigError("NEXTIVA_HOLIDAY_OVERRIDES_FILE must name a file")
         try:
-            load_closure_dates(closure_dates)
-        except ClosureDatesError as error:
-            raise ConfigError(f"NEXTIVA_CLOSURE_DATES_FILE is invalid: {error}") from error
+            load_holiday_overrides(closure_dates)
+        except HolidayCalendarError as error:
+            raise ConfigError(
+                f"NEXTIVA_HOLIDAY_OVERRIDES_FILE (NEXTIVA_CLOSURE_DATES_FILE legacy alias) is invalid: {error}"
+            ) from error
+        cache_value = values.get("NEXTIVA_HOLIDAY_CACHE_FILE", "").strip()
+        holiday_cache = Path(cache_value) if cache_value else output.with_suffix(".opm-holidays.ics")
+        if holiday_cache.name == "":
+            raise ConfigError("NEXTIVA_HOLIDAY_CACHE_FILE must name a file")
+        opm_calendar_url = values.get(
+            "NEXTIVA_OPM_CALENDAR_URL",
+            "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics",
+        ).strip()
+        if not opm_calendar_url.startswith("https://"):
+            raise ConfigError("NEXTIVA_OPM_CALENDAR_URL must be an HTTPS URL")
         named_paths = {
             "NEXTIVA_OUTPUT_FILE": output,
             "NEXTIVA_STATE_FILE": state,
@@ -146,6 +165,7 @@ class Config:
             "NEXTIVA_CANDIDATE_CALLS_FILE": candidate_calls,
             "NEXTIVA_AGENT_LOOKUP_FILE": lookup,
             "NEXTIVA_CLOSURE_DATES_FILE": closure_dates,
+            "NEXTIVA_HOLIDAY_CACHE_FILE": holiday_cache,
         }
         resolved_paths = [path.resolve() for path in named_paths.values()]
         if len(resolved_paths) != len(set(resolved_paths)):
@@ -166,6 +186,8 @@ class Config:
             candidate_calls_file=candidate_calls,
             agent_lookup_file=lookup,
             closure_dates_file=closure_dates,
+            holiday_cache_file=holiday_cache,
+            opm_calendar_url=opm_calendar_url,
             membership_hunt_group=membership_hunt_group,
             membership_simultaneous_from=membership_simultaneous_from,
         )
