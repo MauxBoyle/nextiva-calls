@@ -13,7 +13,7 @@ from nextiva_calls.holiday_calendar import resolve_holiday_calendar
 from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import MailboxError
 from nextiva_calls.segments import AgentLookupError, load_agent_lookup
-from nextiva_calls.storage import StorageError
+from nextiva_calls.storage import StorageError, save_analysis, save_candidate_calls
 
 
 def configure_logging(environ: Mapping[str, str] | None = None) -> None:
@@ -37,7 +37,6 @@ def _weekly_parser() -> argparse.ArgumentParser:
 def _run_weekly_report(arguments: list[str]) -> int:
     """Generate a weekly PDF without requiring mailbox credentials."""
     from nextiva_calls.reconstruction import MEMBERSHIP_SIMULTANEOUS_FROM
-    from nextiva_calls.storage import save_candidate_calls
     from nextiva_calls.weekly_metrics import (
         load_candidates,
         parse_week_start,
@@ -92,6 +91,22 @@ def _run_weekly_report(arguments: list[str]) -> int:
     )
     if used_cache:
         logger.warning("Using cached OPM holiday calendar after refresh failure")
+    # The analysis and candidate CSVs are derived from the raw audit trail.
+    # Rebuild them immediately before every weekly report so a manual raw-CSV
+    # update cannot leave the dashboard reading yesterday's derived data.
+    # Some integrations provide only a candidate CSV, so retain that supported
+    # mode when there is no raw CSV to rebuild from.
+    if raw.exists():
+        save_analysis(analysis, raw, lookup, holiday_calendar)
+        save_candidate_calls(
+            candidates,
+            analysis,
+            membership_hunt_group=membership_hunt_group,
+            membership_simultaneous_from=os.environ.get(
+                "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM",
+                MEMBERSHIP_SIMULTANEOUS_FROM,
+            ),
+        )
     try:
         rows = load_candidates(candidates)
     except StorageError as error:

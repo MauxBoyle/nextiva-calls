@@ -218,6 +218,38 @@ def test_weekly_report_rebuilds_a_stale_candidate_schema(monkeypatch, tmp_path):
     assert b"100.0%" in output.read_bytes()
 
 
+def test_weekly_report_rebuilds_candidates_from_newer_raw_data(monkeypatch, tmp_path):
+    raw = tmp_path / "calls.csv"
+    candidates = raw.with_suffix(".candidate-calls.csv")
+    lookup_file = tmp_path / "agents.csv"
+    lookup_file.write_text(
+        "phone_number,display_name,department,destination_type\n"
+        "15550101,Alex,Membership,agent\n",
+        encoding="utf-8",
+    )
+    with raw.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(CSV_COLUMNS)
+        writer.writerow([
+            "Membership", "Aug 17 2026 10:00 AM", "60", "Inbound", "Yes",
+            "15550001", "15550101",
+        ])
+    with candidates.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
+        writer.writeheader()
+    output = tmp_path / "manager.pdf"
+    monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
+    monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup_file))
+
+    assert app.main(["weekly-report", "--week-start", "2026-08-17", "--output", str(output)]) == 0
+
+    with candidates.open(newline="", encoding="utf-8") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1
+    assert rows[0]["outcome"] == "Confirmed human answered"
+    assert b"(1)" in output.read_bytes()
+
+
 def test_combined_dashboard_has_separate_department_outcomes_and_hour_labels(tmp_path):
     membership = Destination("Alex", "Membership", "agent")
     certification = Destination("Casey", "Certification", "agent")
