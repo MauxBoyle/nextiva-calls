@@ -169,6 +169,11 @@ the seven raw columns plus `call_timestamp_ct`, `from_number_normalized`,
 `is_duplicate`, `is_anomaly`, `anomaly_reasons`, `is_business_hours`, and
 `is_holiday`. Booleans are written as `True`/`False`.
 
+Each weekly-report run rebuilds both the analysis CSV and the candidate-call CSV
+from the raw CSV immediately before calculating the dashboard. This means a
+manual raw-data update is included automatically; no separate refresh command is
+needed.
+
 The lookup CSV is required and must have exactly
 `phone_number,display_name,department,destination_type` headers. Values are
 nonblank, types are `agent` or `system`, and conflicting full-number mappings
