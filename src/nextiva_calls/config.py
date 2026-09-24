@@ -37,6 +37,7 @@ class Config:
     # now points at date,name,status holiday overrides.
     closure_dates_file: Path = Path("closure_dates.csv")
     holiday_cache_file: Path = Path("opm_holidays.ics")
+    holiday_status_file: Path | None = None
     opm_calendar_url: str = "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics"
     membership_hunt_group: str = "Membership"
     membership_simultaneous_from: str = "2026-08-15T00:00:00-05:00"
@@ -151,6 +152,14 @@ class Config:
         holiday_cache = Path(cache_value) if cache_value else output.with_suffix(".opm-holidays.ics")
         if holiday_cache.name == "":
             raise ConfigError("NEXTIVA_HOLIDAY_CACHE_FILE must name a file")
+        status_value = values.get("NEXTIVA_HOLIDAY_STATUS_FILE", "").strip()
+        holiday_status = (
+            Path(status_value)
+            if status_value
+            else output.with_suffix(".holiday-refresh.json")
+        )
+        if holiday_status.name == "":
+            raise ConfigError("NEXTIVA_HOLIDAY_STATUS_FILE must name a file")
         opm_calendar_url = values.get(
             "NEXTIVA_OPM_CALENDAR_URL",
             "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics",
@@ -166,6 +175,7 @@ class Config:
             "NEXTIVA_AGENT_LOOKUP_FILE": lookup,
             "NEXTIVA_CLOSURE_DATES_FILE": closure_dates,
             "NEXTIVA_HOLIDAY_CACHE_FILE": holiday_cache,
+            "NEXTIVA_HOLIDAY_STATUS_FILE": holiday_status,
         }
         resolved_paths = [path.resolve() for path in named_paths.values()]
         if len(resolved_paths) != len(set(resolved_paths)):
@@ -187,6 +197,7 @@ class Config:
             agent_lookup_file=lookup,
             closure_dates_file=closure_dates,
             holiday_cache_file=holiday_cache,
+            holiday_status_file=holiday_status,
             opm_calendar_url=opm_calendar_url,
             membership_hunt_group=membership_hunt_group,
             membership_simultaneous_from=membership_simultaneous_from,

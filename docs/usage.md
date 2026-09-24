@@ -22,6 +22,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | Role-aware destination lookup CSV |
 | `NEXTIVA_HOLIDAY_OVERRIDES_FILE` | No | `closure_dates.csv` | Local `date,name,status` closure/open overrides |
 | `NEXTIVA_HOLIDAY_CACHE_FILE` | No | beside raw CSV | Validated local copy of OPM's iCalendar feed |
+| `NEXTIVA_HOLIDAY_STATUS_FILE` | No | beside raw CSV | Local retry and one-alert status for calendar refreshes |
 | `NEXTIVA_OPM_CALENDAR_URL` | No | OPM official feed | HTTPS OPM iCalendar source |
 | `EMAIL_IMAP_SERVER` | No | `imap.gmail.com` | IMAP hostname |
 | `NEXTIVA_EMAIL_SENDER` | No | `analytics@nextiva.com` | Exact sender address |
@@ -124,6 +125,22 @@ phone numbers and makes no agent-miss, wait-time, speed-of-answer, or outbound
 claims.
 
 ## Processing behavior
+
+### Calendar refresh and deferred analysis
+
+Saving a validated Nextiva report is the first priority. The raw CSV, SQLite
+provenance, and processed-email state are saved before holiday calendar work.
+If the OPM calendar or derived analysis is unavailable, the import still succeeds
+for captured reports and retries the analysis on the next nightly run.
+
+The OPM calendar cache is requested immediately only when it does not cover the
+current calendar year. From December 15 onward, the importer refreshes until the
+cache also covers the following year. A valid cache that already covers those
+dates avoids an unnecessary request. `NextivaCallData.opm-holidays.ics` and
+`NextivaCallData.holiday-refresh.json` are local operational files; do not add
+them to Git. The JSON sidecar records pending analysis and prevents duplicate
+alerts across restarts. One safe diagnostic email is sent to `EMAIL_USERNAME`
+for a continuous refresh outage; a later successful refresh resets that alert.
 
 The importer searches without marking email as read, then checks sender and
 subject again in Python. It processes IMAP UIDs oldest-first. HTML email is

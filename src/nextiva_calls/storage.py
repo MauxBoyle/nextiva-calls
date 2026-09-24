@@ -30,6 +30,38 @@ def _temporary_path(destination: Path) -> Path:
     return Path(name)
 
 
+def load_holiday_refresh_status(path: Path) -> dict[str, bool]:
+    """Read the small, local state file used for deferred calendar work."""
+    if not path.exists():
+        return {"analysis_pending": False, "calendar_failure_alerted": False}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise StorageError("Holiday refresh status could not be read") from error
+    if not isinstance(value, dict) or set(value) != {
+        "analysis_pending", "calendar_failure_alerted"
+    } or not all(isinstance(item, bool) for item in value.values()):
+        raise StorageError("Holiday refresh status is invalid")
+    return value
+
+
+def save_holiday_refresh_status(path: Path, status: dict[str, bool]) -> None:
+    """Atomically save calendar retry and one-alert-per-outage state."""
+    try:
+        temporary = _temporary_path(path)
+        with temporary.open("w", encoding="utf-8") as stream:
+            json.dump(status, stream, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except OSError as error:
+        raise StorageError("Holiday refresh status could not be written") from error
+    finally:
+        if "temporary" in locals():
+            temporary.unlink(missing_ok=True)
+
+
 def load_csv(path: Path) -> list[tuple[str, ...]]:
     """Read existing rows after checking the exact public header."""
     if not path.exists():

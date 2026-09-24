@@ -43,10 +43,14 @@ This writes `reports/Nextiva_Weekly_<start>_to_<end>.pdf` for the seven complete
 days ending yesterday and compares it to the prior seven days. To recreate a
 specific week, use `--week-start 2026-08-17`. Confirm the PDF opens, has the
 expected period, and visibly review **PRELIMINARY** and “Data through” before
-sharing. OPM's official federal-holiday iCalendar feed is refreshed on every run,
-including published observed dates. If refresh fails, a validated local cache is
-used only when it covers the requested period; otherwise the run stops before
-derived files or a PDF are written.
+sharing. OPM's official federal-holiday iCalendar feed is fetched only when its
+local cache does not cover the current year; from December 15, refreshes continue
+until the cache covers the following year too. If a daily import cannot refresh
+the calendar, it still saves raw calls, metadata, and processed-email state, then
+marks analysis pending for the next nightly retry. One safe alert email goes to
+`EMAIL_USERNAME` for an uninterrupted outage, and a successful refresh resets it.
+Keep the local `.opm-holidays.ics` cache and `.holiday-refresh.json` sidecar with
+the raw CSV, but do not commit either. A weekly PDF still needs a usable calendar.
 
 ## What the PDF means
 

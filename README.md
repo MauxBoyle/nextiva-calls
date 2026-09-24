@@ -4,6 +4,17 @@
 It validates each report before updating a CSV and remembers processed emails so
 running the command again is safe.
 
+## Reliable daily capture
+
+Validated Nextiva reports are saved to the raw CSV, metadata database, and
+processed-message state before calendar-based analysis runs. If the OPM holiday
+calendar cannot refresh, call capture still succeeds and analysis/candidate CSVs
+are rebuilt automatically after a later successful refresh. The importer uses a
+local OPM cache: it refreshes when the cache does not cover the current year and,
+from December 15, until it also covers the next year. The cache and its adjacent
+holiday-refresh status JSON are local operational files, not Git files. One safe
+email alert is sent to `EMAIL_USERNAME` for each continuous refresh outage.
+
 ## Installation
 
 Clone the repository, move into the project directory, and install the dependencies:

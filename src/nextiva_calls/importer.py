@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import smtplib
 from collections.abc import Callable, Iterable
 from datetime import date
 from email import policy
+from email.message import EmailMessage
 from email.parser import BytesParser
 from email.utils import parseaddr, parsedate_to_datetime
 from pathlib import Path
@@ -18,7 +20,7 @@ from nextiva_calls.email_reports import (
     extract_report_url,
     report_identifier,
 )
-from nextiva_calls.holiday_calendar import resolve_holiday_calendar
+from nextiva_calls.holiday_calendar import HolidayCalendar, resolve_holiday_calendar
 from nextiva_calls.mailbox import ImapMailbox, RawMessage
 from nextiva_calls.records import CallRecord
 from nextiva_calls.report import ReportError, ReportResult, load_report
@@ -28,16 +30,20 @@ from nextiva_calls.storage import (
     StorageError,
     append_records,
     load_csv,
+    load_holiday_refresh_status,
     load_state,
     report_fingerprint,
     save_analysis,
     save_candidate_calls,
+    save_holiday_refresh_status,
     save_records,
     save_state,
 )
 
 MailboxFactory = Callable[[Config], Iterable[RawMessage]]
 ReportLoader = Callable[[str, float], ReportResult | list[CallRecord]]
+CalendarResolver = Callable[..., tuple[HolidayCalendar, bool]]
+AlertSender = Callable[[Config], None]
 
 
 def _default_messages(config: Config) -> Iterable[RawMessage]:
@@ -45,6 +51,21 @@ def _default_messages(config: Config) -> Iterable[RawMessage]:
         config.imap_server, config.email_username, config.email_app_password
     )
     return mailbox.messages(config.email_sender, config.email_subject)
+
+
+def _send_calendar_alert(config: Config) -> None:
+    """Send a deliberately non-sensitive alert for a calendar refresh outage."""
+    message = EmailMessage()
+    message["From"] = config.email_username
+    message["To"] = config.email_username
+    message["Subject"] = "Nextiva calls: holiday calendar refresh needs attention"
+    message.set_content(
+        "Call reports were saved, but holiday-based analysis is waiting for an "
+        "OPM calendar refresh. The importer will retry on its next run."
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+        server.login(config.email_username, config.email_app_password)
+        server.send_message(message)
 
 
 def run_import(
@@ -56,27 +77,10 @@ def run_import(
     state_reader: Callable[[Path], set[str]] = load_state,
     state_writer: Callable[[Path, set[str]], None] = save_state,
     metadata_store_factory: Callable[[Path], MetadataStore] = MetadataStore,
+    calendar_resolver: CalendarResolver = resolve_holiday_calendar,
+    alert_sender: AlertSender = _send_calendar_alert,
 ) -> bool:
-    """Import all new reports, returning whether every required report succeeded."""
-    # Validate this external dependency before any metadata, raw CSV, or state
-    # file can be created or changed.
-    try:
-        lookup = load_agent_lookup(config.agent_lookup_file)
-    except AgentLookupError as error:
-        raise StorageError("Agent lookup file is invalid") from error
-    year = date.today().year
-    try:
-        holiday_calendar, cached_calendar = resolve_holiday_calendar(
-            date(year, 1, 1),
-            date(year, 12, 31),
-            cache_path=config.holiday_cache_file,
-            overrides_path=config.closure_dates_file,
-            url=config.opm_calendar_url,
-        )
-    except ValueError as error:
-        raise StorageError("Holiday calendar is unavailable") from error
-    if cached_calendar:
-        logger.warning("Using cached OPM holiday calendar after refresh failure")
+    """Capture reports first; calendar-derived files are safe follow-up work."""
     processed = state_reader(config.state_file)
     metadata_path = config.metadata_file or config.output_file.with_suffix(
         ".metadata.sqlite3"
@@ -181,24 +185,81 @@ def run_import(
                 warnings=tuple(warnings),
                 records=result.records,
             )
-            written = save_analysis(
-                analysis_path, config.output_file, lookup, holiday_calendar
-            )
-            save_candidate_calls(
-                candidate_path,
-                analysis_path,
-                membership_hunt_group=config.membership_hunt_group,
-                membership_simultaneous_from=config.membership_simultaneous_from,
-            )
-            omitted = len(load_csv(config.output_file)) - written
-            if omitted:
-                logger.info("Analysis omitted {} exact duplicate raw row(s)", omitted)
         for warning in warnings:
             logger.warning("{}", warning)
         processed.add(identifier)
         state_writer(config.state_file, processed)
         imported += 1
         logger.info("Imported report with {} validated call rows", len(result.records))
+
+    # Raw CSV, SQLite provenance, and processed-message state above are the
+    # durable capture path. A bad lookup, calendar, or derived-file write must
+    # never make a successfully captured report look failed.
+    status_path = config.holiday_status_file or config.output_file.with_suffix(
+        ".holiday-refresh.json"
+    )
+    try:
+        status = load_holiday_refresh_status(status_path)
+    except StorageError:
+        logger.error("Holiday refresh status could not be read; using safe retry state")
+        status = {"analysis_pending": True, "calendar_failure_alerted": False}
+
+    refresh_failed = False
+
+    def note_refresh_failure() -> None:
+        nonlocal refresh_failed
+        refresh_failed = True
+
+    year = date.today().year
+    try:
+        holiday_calendar, used_cache = calendar_resolver(
+            date(year, 1, 1),
+            date(year, 12, 31),
+            cache_path=config.holiday_cache_file,
+            overrides_path=config.closure_dates_file,
+            url=config.opm_calendar_url,
+            refresh_failure_handler=note_refresh_failure,
+        )
+        if used_cache:
+            logger.info("Using validated cached OPM holiday calendar")
+        lookup = load_agent_lookup(config.agent_lookup_file)
+        written = save_analysis(analysis_path, config.output_file, lookup, holiday_calendar)
+        save_candidate_calls(
+            candidate_path,
+            analysis_path,
+            membership_hunt_group=config.membership_hunt_group,
+            membership_simultaneous_from=config.membership_simultaneous_from,
+        )
+        omitted = len(load_csv(config.output_file)) - written
+        if omitted:
+            logger.info("Analysis omitted {} exact duplicate raw row(s)", omitted)
+        status = {"analysis_pending": False, "calendar_failure_alerted": False}
+    except (ValueError, AgentLookupError, StorageError):
+        # The exact exception can contain a local path. Keep routine logs safe
+        # and concise while preserving the capture result.
+        logger.warning("Calendar-based analysis is pending and will be retried")
+        status["analysis_pending"] = True
+        if refresh_failed and not status["calendar_failure_alerted"]:
+            try:
+                alert_sender(config)
+            except (OSError, smtplib.SMTPException):
+                logger.error("Holiday calendar alert email could not be sent")
+            else:
+                status["calendar_failure_alerted"] = True
+    else:
+        # A failed refresh can still have supplied a usable cache. It is useful
+        # to alert once, but analysis was successfully rebuilt in this run.
+        if refresh_failed and not status["calendar_failure_alerted"]:
+            try:
+                alert_sender(config)
+            except (OSError, smtplib.SMTPException):
+                logger.error("Holiday calendar alert email could not be sent")
+            else:
+                status["calendar_failure_alerted"] = True
+    try:
+        save_holiday_refresh_status(status_path, status)
+    except StorageError:
+        logger.error("Holiday refresh status could not be saved")
 
     logger.info(
         "Import complete: {} matching messages, {} reports processed, {} rows added",

@@ -62,6 +62,9 @@ cover/
 !docs/candidate-call-validation-checklist-v1.csv
 reports/
 *.state.json
+*.opm-holidays.ics
+opm_holidays.ics
+*.holiday-refresh.json
 local_settings.py
 db.sqlite3
 db.sqlite3-journal

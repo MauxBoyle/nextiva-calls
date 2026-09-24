@@ -4,6 +4,7 @@ from email.message import EmailMessage
 import pytest
 
 from nextiva_calls.config import Config
+from nextiva_calls.holiday_calendar import parse_opm_icalendar
 from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import RawMessage
 from nextiva_calls.records import CallRecord
@@ -223,14 +224,15 @@ def test_repeated_report_under_a_new_message_keeps_raw_and_analysis_unique(tmp_p
 def test_invalid_lookup_fails_before_creating_raw_or_metadata_files(tmp_path):
     settings = config(tmp_path)
     settings.agent_lookup_file.write_text("wrong,header\n1,Alex\n", encoding="utf-8")
-    with pytest.raises(StorageError, match="lookup"):
-        run_import(
-            settings,
-            mailbox_factory=lambda _: [raw_message()],
-            report_loader=lambda *_: [RECORD],
-        )
-    assert not settings.output_file.exists()
-    assert not (tmp_path / "calls.metadata.sqlite3").exists()
+    assert run_import(
+        settings,
+        mailbox_factory=lambda _: [raw_message()],
+        report_loader=lambda *_: [RECORD],
+        alert_sender=lambda _: None,
+    )
+    assert settings.output_file.exists()
+    assert (tmp_path / "calls.metadata.sqlite3").exists()
+    assert not (tmp_path / "calls.analysis.csv").exists()
 
 
 def test_raw_duplicates_are_preserved_but_analysis_omits_them(tmp_path):
@@ -248,3 +250,94 @@ def test_raw_duplicates_are_preserved_but_analysis_omits_them(tmp_path):
     candidates = settings.output_file.with_suffix(".candidate-calls.csv")
     with candidates.open(newline="", encoding="utf-8") as stream:
         assert len(list(csv.reader(stream))) == 2
+
+
+def test_calendar_failure_keeps_raw_metadata_and_processed_state(tmp_path):
+    settings = config(tmp_path)
+    alerts = []
+
+    def unavailable(*_, refresh_failure_handler, **__):
+        refresh_failure_handler()
+        raise ValueError("offline")
+
+    assert run_import(
+        settings, mailbox_factory=lambda _: [raw_message()],
+        report_loader=lambda *_: [RECORD], calendar_resolver=unavailable,
+        alert_sender=lambda _: alerts.append("sent"),
+    )
+    assert len(load_csv(settings.output_file)) == 1
+    assert load_state(settings.state_file) == {"message-id:<one@example.test>"}
+    assert (tmp_path / "calls.metadata.sqlite3").exists()
+    assert alerts == ["sent"]
+
+
+def test_deferred_analysis_rebuilds_when_calendar_recovers(tmp_path):
+    settings = config(tmp_path)
+
+    def unavailable(*_, refresh_failure_handler, **__):
+        refresh_failure_handler()
+        raise ValueError("offline")
+
+    assert run_import(
+        settings, mailbox_factory=lambda _: [raw_message()],
+        report_loader=lambda *_: [RECORD], calendar_resolver=unavailable,
+        alert_sender=lambda _: None,
+    )
+    calendar = parse_opm_icalendar("""BEGIN:VCALENDAR
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20260101
+SUMMARY:New Year
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261231
+SUMMARY:New Year's Eve
+END:VEVENT
+END:VCALENDAR
+""")
+    assert run_import(
+        settings, mailbox_factory=lambda _: [], calendar_resolver=lambda *_, **__: (calendar, False),
+    )
+    assert (tmp_path / "calls.analysis.csv").exists()
+    assert (tmp_path / "calls.candidate-calls.csv").exists()
+
+
+def test_one_calendar_alert_per_continuous_failure_and_success_resets(tmp_path):
+    settings = config(tmp_path)
+    alerts = []
+
+    def unavailable(*_, refresh_failure_handler, **__):
+        refresh_failure_handler()
+        raise ValueError("offline")
+
+    for _ in range(2):
+        assert run_import(settings, mailbox_factory=lambda _: [], calendar_resolver=unavailable, alert_sender=lambda _: alerts.append("sent"))
+    assert alerts == ["sent"]
+    calendar = parse_opm_icalendar("""BEGIN:VCALENDAR
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20260101
+SUMMARY:New Year
+END:VEVENT
+BEGIN:VEVENT
+DTSTART;VALUE=DATE:20261231
+SUMMARY:New Year's Eve
+END:VEVENT
+END:VCALENDAR
+""")
+    assert run_import(settings, mailbox_factory=lambda _: [], calendar_resolver=lambda *_, **__: (calendar, False))
+    assert run_import(settings, mailbox_factory=lambda _: [], calendar_resolver=unavailable, alert_sender=lambda _: alerts.append("sent"))
+    assert alerts == ["sent", "sent"]
+
+
+def test_alert_delivery_failure_does_not_change_capture_result(tmp_path, monkeypatch):
+    settings = config(tmp_path)
+
+    def unavailable(*_, refresh_failure_handler, **__):
+        refresh_failure_handler()
+        raise ValueError("offline")
+
+    assert run_import(
+        settings, mailbox_factory=lambda _: [raw_message()], report_loader=lambda *_: [RECORD],
+        calendar_resolver=unavailable,
+        alert_sender=lambda _: (_ for _ in ()).throw(OSError("mail down")),
+    )
+    assert len(load_csv(settings.output_file)) == 1

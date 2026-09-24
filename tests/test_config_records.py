@@ -22,6 +22,7 @@ def test_config_defaults_and_derived_state_file():
     assert config.metadata_file == Path("NextivaCallData.metadata.sqlite3")
     assert config.analysis_file == Path("NextivaCallData.analysis.csv")
     assert config.candidate_calls_file == Path("NextivaCallData.candidate-calls.csv")
+    assert config.holiday_status_file == Path("NextivaCallData.holiday-refresh.json")
     assert config.membership_hunt_group == "Membership"
     assert config.membership_simultaneous_from == "2026-08-15T00:00:00-05:00"
     assert config.agent_lookup_file == Path("agent_lookup.csv")
@@ -41,6 +42,7 @@ def test_config_custom_values():
             "NEXTIVA_METADATA_FILE": "metadata/custom.sqlite3",
             "NEXTIVA_ANALYSIS_FILE": "analysis/custom.csv",
             "NEXTIVA_CANDIDATE_CALLS_FILE": "candidates/custom.csv",
+            "NEXTIVA_HOLIDAY_STATUS_FILE": "status/holiday.json",
             "NEXTIVA_MEMBERSHIP_HUNT_GROUP": "Reception",
             "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-16T00:00:00-05:00",
             "NEXTIVA_AGENT_LOOKUP_FILE": "lookups/agents.csv",
@@ -53,6 +55,7 @@ def test_config_custom_values():
     assert config.metadata_file == Path("metadata/custom.sqlite3")
     assert config.analysis_file == Path("analysis/custom.csv")
     assert config.candidate_calls_file == Path("candidates/custom.csv")
+    assert config.holiday_status_file == Path("status/holiday.json")
     assert config.membership_hunt_group == "Reception"
     assert config.agent_lookup_file == Path("lookups/agents.csv")
     assert config.closure_dates_file == Path("closure_dates.csv")
