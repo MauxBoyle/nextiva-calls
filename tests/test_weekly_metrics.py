@@ -6,6 +6,7 @@ import pytest
 from nextiva_calls.segments import AgentLookup, Destination
 from nextiva_calls.storage import StorageError
 from nextiva_calls.weekly_metrics import (
+    CONNECTED_CALL_ATTRIBUTION_CATEGORIES,
     OTHER,
     Week,
     build_weekly_insights,
@@ -272,6 +273,42 @@ def test_conservative_answer_kpi_handles_zero_denominators(tmp_path):
     assert summary.connected_calls == 0
     assert summary.attribution_coverage_numerator == 0
     assert summary.attribution_coverage_denominator == 0
+    assert summary.unique_connected_call_attribution == {
+        category: 0 for category in CONNECTED_CALL_ATTRIBUTION_CATEGORIES
+    }
+
+
+def test_unique_connected_call_reconciliation_partitions_each_connected_call(tmp_path):
+    agents = {
+        f"155502{index:02d}": Destination(name, "Membership", "agent")
+        for index, name in enumerate(("Garrett", "Tye", "Leah", "Ed", "Karla"), start=1)
+    }
+    named_lookup = AgentLookup(
+        agents,
+        {number[-4:]: frozenset({agent}) for number, agent in agents.items()},
+    )
+    named_numbers = list(agents)
+    rows = [
+        row(confirmed_answered_agent_destinations=number, outcome="Confirmed human answered")
+        for number in named_numbers
+    ]
+    rows.extend([
+        row(
+            confirmed_answered_agent_destinations=f"{named_numbers[0]};{named_numbers[1]}",
+            outcome="Confirmed human answered",
+        ),
+        row(confirmed_answered_agent_destinations="", outcome="Connected / unknown attribution"),
+        row(confirmed_answered_agent_destinations="", outcome="Answered / unattributed"),
+        row(confirmed_answered_agent_destinations="", outcome="Ambiguous"),
+    ])
+
+    summary = summarize_week(rows, Week(date(2026, 8, 17)), named_lookup, tmp_path / "missing.sqlite3")
+
+    assert summary.unique_connected_call_attribution == {
+        "Garrett": 1, "Tye": 1, "Leah": 1, "Ed": 1, "Karla": 1,
+        "Multiple named agents": 1, "Other": 3,
+    }
+    assert sum(summary.unique_connected_call_attribution.values()) == summary.connected_calls == 9
 
 
 def test_load_candidates_rejects_legacy_header(tmp_path):

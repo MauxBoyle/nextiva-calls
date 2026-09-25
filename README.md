@@ -190,8 +190,8 @@ counts once in combined totals. Every scoped call is included, including
 after-hours, weekend, holiday, and voicemail-only calls.
 
 It includes reporting-period, data-through, and generation timestamps; separate
-Membership and Certification stacked weekday outcome charts and reconciliation
-tables (omitted for a department with no calls); combined coverage, routing,
+Membership and Certification 14-day outcome charts and tables, with the prior
+week first and the current week second; combined coverage, routing,
 hunt-group, and heatmap views; a manager-only agent table; and a fourth-page
 automated-insights section. A cross-department
 call appears in each matching department's outcome detail. `Yes` means only `Confirmed human answered`; forwarded
@@ -207,6 +207,14 @@ It deliberately does not make outbound, speed-of-answer, wait-time, or “agent
 miss” claims, and it never displays customer or agent phone numbers.
 
 The agent lookup used when generating the report is authoritative at report time.
+Attribution Coverage is `confirmed known-agent answers / connected calls`.
+Connected calls include confirmed-human, connected/unknown-attribution,
+answered/unattributed, and ambiguous outcomes; forwarded/routing-only calls are
+excluded. The report also has a separate unique connected-call reconciliation:
+Garrett, Tye, Leah, Ed, and Karla each receive a call only when they are the one
+confirmed named answer; multiple confirmed named answers are grouped together;
+all other connected calls are `Other`. These counts add up to connected calls and
+are not routing offers.
 The table's **offer answer rate** is the percentage of recorded offers answered,
 not a performance score or miss rate. A recorded offer is one duplicate-free
 call-agent pair with exact normalized `Yes` or `No` evidence; `Yes` also counts

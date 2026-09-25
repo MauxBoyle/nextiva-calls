@@ -144,6 +144,8 @@ def _run_weekly_report(arguments: list[str]) -> int:
         output,
         membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
         certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
+        prior_membership=summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "Membership", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
+        prior_certification=summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
     )
     logger.info("Wrote weekly report to {}", output)
     return 0
