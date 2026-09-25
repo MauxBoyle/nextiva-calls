@@ -72,3 +72,10 @@ def test_main_hides_unexpected_exception_details(monkeypatch, capfd):
     assert app.main() == 1
     output = capfd.readouterr().err
     assert "SUPER_SECRET_VALUE" not in output
+
+
+def test_weekly_report_test_flag_requires_send(monkeypatch, capfd):
+    monkeypatch.setenv("LOG_FILE", "")
+
+    assert app.main(["weekly-report", "--test"]) == 2
+    assert "--test requires --send" in capfd.readouterr().err

@@ -59,12 +59,20 @@ yesterday with the preceding seven days:
 ```bash
 uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
+uv run --env-file .env nextiva_calls weekly-report --send
+uv run --env-file .env nextiva_calls weekly-report --send --test
 ```
 
 `--week-start` accepts any date in `YYYY-MM-DD` format as the beginning of a
 seven-day historical period. The default output is the printable four-page Letter PDF
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
 elsewhere.
+
+Use `--send` to email the PDF after it is generated. Normal delivery reads
+`weekly_report_recipients.txt`, which is a versioned file with one address per
+line; blank lines and `#` comments are allowed. Normal recipients are visible in
+the `To` field and `EMAIL_USERNAME` receives a hidden envelope BCC copy. Use
+`--send --test` to deliver only to `EMAIL_USERNAME` before sending to the list.
 
 For the repeatable operating routine, metric definitions, safe configuration
 changes, and failure handling, see the [manager operating runbook](operations.md).
