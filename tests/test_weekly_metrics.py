@@ -46,6 +46,80 @@ def test_configured_closure_is_a_holiday_not_business_hours(tmp_path):
     assert summary.time_categories["Business hours"] == 0
 
 
+def test_certification_scope_uses_configured_hunt_group(tmp_path):
+    certification = Destination("Casey", "Certification", "agent")
+    scoped_lookup = AgentLookup({"15550202": certification}, {"0202": frozenset({certification})})
+    values = row(hunt_group="Certification Hunt Group", offered_agent_destinations="")
+
+    summary = summarize_week(
+        [values], Week(date(2026, 8, 17)), scoped_lookup, tmp_path / "missing.sqlite3",
+        scope="Certification",
+    )
+
+    assert summary.calls == 1
+    assert summary.hunt_groups["Certification Hunt Group"]["calls"] == 1
+
+
+@pytest.mark.parametrize(
+    ("raw_hunt_group", "report_hunt_group"),
+    [
+        ("Reception1", "Reception"),
+        ("Book Store", "Bookstore"),
+    ],
+)
+def test_hunt_group_comparison_normalizes_nextiva_export_aliases(
+    tmp_path, raw_hunt_group, report_hunt_group
+):
+    summary = summarize_week(
+        [row(hunt_group=raw_hunt_group)],
+        Week(date(2026, 8, 17)),
+        lookup(),
+        tmp_path / "missing.sqlite3",
+    )
+
+    assert summary.hunt_groups[report_hunt_group]["calls"] == 1
+
+
+def test_answered_talk_time_includes_unattributed_confirmed_answer(tmp_path):
+    values = row(
+        confirmed_answered_agent_destinations="",
+        recorded_offer_agent_destinations="",
+        offered_agent_destinations="",
+        maximum_duration_seconds="90",
+    )
+
+    summary = summarize_week([values], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
+
+    assert summary.answered_talk_seconds == 90
+
+
+def test_candidate_date_range_is_transparently_inferred_as_coverage(tmp_path):
+    week = Week(date(2026, 8, 17))
+    candidates = [
+        row(call_timestamp_ct=f"2026-08-{day:02d}T10:00:00-05:00")
+        for day in range(17, 24)
+    ]
+
+    summary = summarize_week(candidates, week, lookup(), tmp_path / "missing.sqlite3")
+
+    assert not summary.preliminary
+    assert summary.coverage_inferred
+    assert summary.data_through == week.end_at
+
+
+def test_candidate_coverage_is_preliminary_when_an_interior_date_is_missing(tmp_path):
+    week = Week(date(2026, 8, 17))
+    candidates = [
+        row(call_timestamp_ct=f"2026-08-{day:02d}T10:00:00-05:00")
+        for day in (17, 18, 19, 21, 22, 23)
+    ]
+
+    summary = summarize_week(candidates, week, lookup(), tmp_path / "missing.sqlite3")
+
+    assert summary.preliminary
+    assert not summary.coverage_inferred
+
+
 def insight_summary(tmp_path, *, calls, voicemail, confirmed, preliminary=False):
     """Small complete summary for testing insight rules without PDF layout."""
     base = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")

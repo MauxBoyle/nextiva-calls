@@ -27,12 +27,19 @@ OUTCOMES = (
     "Ambiguous",
 )
 OTHER = "Other / Unattributed"
-HUNT_GROUPS = ("Reception", "Membership", "Certification", "Bookstore")
 OUTCOME_BUCKETS = ("Yes", "No", "Voicemail", "Unknown / Ambiguous")
 REPORTING_DEPARTMENTS = ("Membership", "Certification")
 COMBINED_SCOPE = "combined"
 MINIMUM_INSIGHT_CALLS = 20
 MATERIAL_RATE_CHANGE_POINTS = 10
+
+# Nextiva's export labels are not always the labels used in the manager
+# report. Keep the original label in the candidate CSV for auditability, then
+# translate only when populating the hunt-group comparison.
+HUNT_GROUP_ALIASES = {
+    "Reception1": "Reception",
+    "Book Store": "Bookstore",
+}
 
 
 @dataclass(frozen=True)
@@ -93,6 +100,7 @@ class WeeklySummary:
     routing_attempt_distribution: dict[int, int]
     anomalies: dict[str, int]
     data_through: datetime | None
+    coverage_inferred: bool = False
     holidays: tuple[Holiday, ...] = ()
     calendar_coverage_warning: bool = False
 
@@ -308,14 +316,15 @@ def _scope_departments(scope: str) -> tuple[str, ...]:
 
 
 def _matches_scope(
-    row: dict[str, str], lookup: AgentLookup, departments: tuple[str, ...], membership_hunt_group: str
+    row: dict[str, str], lookup: AgentLookup, departments: tuple[str, ...], membership_hunt_group: str,
+    certification_hunt_group: str,
 ) -> bool:
     """Whether a call is in a department scope through a group or offered agent."""
-    hunt_groups = {
-        membership_hunt_group if department == "Membership" else department
-        for department in departments
+    source_groups = {
+        "Membership": membership_hunt_group,
+        "Certification": certification_hunt_group,
     }
-    if row.get("hunt_group") in hunt_groups:
+    if row.get("hunt_group") in {source_groups[department] for department in departments}:
         return True
     return any(
         (agent := _agent_destination(destination, lookup)) is not None
@@ -342,6 +351,11 @@ def _outcome_bucket(outcome: str) -> str:
     if outcome == "Voicemail":
         return "Voicemail"
     return "Unknown / Ambiguous"
+
+
+def _report_hunt_group(hunt_group: str) -> str:
+    """Return the manager-report label for a raw Nextiva hunt-group name."""
+    return HUNT_GROUP_ALIASES.get(hunt_group, hunt_group)
 
 
 def _period_is_continuous(path: Path, week: Week) -> bool:
@@ -420,6 +434,24 @@ def _data_through(path: Path, week: Week) -> datetime | None:
     return cursor if cursor > week.start_at else None
 
 
+def _inferred_candidate_coverage(
+    candidates: list[dict[str, str]], week: Week
+) -> datetime | None:
+    """Infer coverage only when candidates include every date in ``week``."""
+    dates = [
+        when.date()
+        for row in candidates
+        if (when := _timestamp(row.get("call_timestamp_ct", ""))) is not None
+    ]
+    required_dates = {
+        week.start + timedelta(days=offset)
+        for offset in range((week.end - week.start).days + 1)
+    }
+    if not required_dates.issubset(dates):
+        return None
+    return week.end_at
+
+
 def summarize_week(
     candidates: list[dict[str, str]],
     week: Week,
@@ -429,6 +461,7 @@ def summarize_week(
     scope: str = "Membership",
     holiday_calendar: HolidayCalendar | None = None,
     closure_dates: frozenset[str] | None = None,
+    certification_hunt_group: str = "Certification Hunt Group",
 ) -> WeeklySummary:
     """Summarize one approved department scope in a Central-time week.
 
@@ -445,7 +478,9 @@ def summarize_week(
     selected = [
         (row, when)
         for row, when in in_period
-        if _matches_scope(row, lookup, departments, membership_hunt_group)
+        if _matches_scope(
+            row, lookup, departments, membership_hunt_group, certification_hunt_group
+        )
     ]
     outcomes = Counter(
         row.get("outcome", "Unknown")
@@ -493,7 +528,10 @@ def summarize_week(
         if row.get("from_number_normalized", "")
     )
     durations = [_duration(row) for row, _ in selected]
-    groups: dict[str, Counter[str]] = {group: Counter() for group in HUNT_GROUPS}
+    groups: dict[str, Counter[str]] = {
+        group: Counter()
+        for group in ("Reception", membership_hunt_group, certification_hunt_group, "Bookstore")
+    }
     # Start with approved lookup-listed people. This both retains zero-offer
     # agents and prevents other departments from producing attribution data.
     agents: defaultdict[str, Counter[str]] = defaultdict(Counter)
@@ -508,7 +546,7 @@ def summarize_week(
     # all in-period candidates while the rest of the dashboard stays scoped to
     # Membership candidates.
     for row, _ in in_period:
-        group = row.get("hunt_group") or "Unknown"
+        group = _report_hunt_group(row.get("hunt_group") or "Unknown")
         if group in groups:
             outcome = row.get("outcome") or "Unknown"
             groups[group]["calls"] += 1
@@ -553,11 +591,12 @@ def summarize_week(
         # A simultaneous call may therefore answer for more than one agent.
         for credited in answer_agents:
             agents[credited.display_name]["answers"] += 1
+        if outcome == "Confirmed human answered":
+            answered_talk += duration
         if len(confirmed) == 1 and len(answer_agents) == 1:
             credited = next(iter(answer_agents))
             agents[credited.display_name]["talk_seconds"] += duration
             agents[credited.display_name].setdefault("durations", []).append(duration)
-            answered_talk += duration
         forwarded_agents = {
             _agent_destination(item, lookup)
             for item in row.get("forwarded_destinations", "").split(";")
@@ -589,9 +628,16 @@ def summarize_week(
         median_seconds=float(median(durations)) if durations else 0,
         maximum_seconds=max(durations, default=0),
     )
+    metadata_complete = _period_is_continuous(metadata_path, week)
+    metadata_data_through = _data_through(metadata_path, week)
+    inferred_data_through = (
+        _inferred_candidate_coverage(candidates, week)
+        if not metadata_complete
+        else None
+    )
     return WeeklySummary(
         week=week,
-        preliminary=not _period_is_continuous(metadata_path, week),
+        preliminary=not metadata_complete and inferred_data_through is None,
         calls=len(selected),
         eligible_inbound_calls=len(selected),
         confirmed_known_agent_answers=confirmed_known_agent_answers,
@@ -650,7 +696,8 @@ def summarize_week(
             key: anomalies[key]
             for key in ("Ambiguous outcomes", "Unknown outcomes", "Unattributed answers")
         },
-        data_through=_data_through(metadata_path, week),
+        data_through=metadata_data_through or inferred_data_through,
+        coverage_inferred=inferred_data_through is not None,
         holidays=(
             holiday_calendar.closures_in(week.start, week.end)
             if holiday_calendar is not None

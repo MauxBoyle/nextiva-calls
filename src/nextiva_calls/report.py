@@ -75,6 +75,38 @@ def parse_report_period(
     return start, end, ()
 
 
+def infer_report_period(records: Iterable[CallRecord]) -> tuple[datetime | None, datetime | None]:
+    """Infer an inclusive Central-time date range from valid call timestamps."""
+    dates = []
+    for record in records:
+        try:
+            parsed = parse_datetime(record.time_of_call, fuzzy=False)
+        except (ParserError, OverflowError, ValueError):
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=CENTRAL_TIME)
+        else:
+            parsed = parsed.astimezone(CENTRAL_TIME)
+        dates.append(parsed.date())
+    if not dates:
+        return None, None
+    return (
+        datetime.combine(min(dates), datetime.min.time(), tzinfo=CENTRAL_TIME),
+        datetime.combine(max(dates), datetime.min.time(), tzinfo=CENTRAL_TIME),
+    )
+
+
+def _with_inferred_period(
+    records: list[CallRecord], start: datetime | None, end: datetime | None,
+    warnings: tuple[str, ...],
+) -> ReportResult:
+    if start is None and end is None and warnings == ("Report period was not found in a labelled header",):
+        start, end = infer_report_period(records)
+        if start is not None:
+            warnings = ("Report period inferred from earliest and latest call dates",)
+    return ReportResult(records, start, end, warnings)
+
+
 def normalized_header(value: str) -> str:
     """Normalize table headings for stable comparisons."""
     return clean_text(value).casefold()
@@ -199,7 +231,7 @@ def load_report(
             page_text = ""
         start, end, warnings = parse_report_period(page_text)
         if table is rendered_text_ready:
-            return ReportResult(
+            return _with_inferred_period(
                 parse_rendered_report_rows(page_text), start, end, warnings
             )
 
@@ -216,9 +248,7 @@ def load_report(
             records = parse_report_rows(report_headers, raw_rows)
         except ReportError:
             records = parse_rendered_report_rows(page_text)
-        return ReportResult(
-            records, start, end, warnings
-        )
+        return _with_inferred_period(records, start, end, warnings)
     except ReportError:
         raise
     except Exception as error:

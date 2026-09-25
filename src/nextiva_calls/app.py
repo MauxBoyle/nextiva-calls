@@ -74,6 +74,11 @@ def _run_weekly_report(arguments: list[str]) -> int:
     ).strip()
     if not membership_hunt_group:
         raise ConfigError("NEXTIVA_MEMBERSHIP_HUNT_GROUP must not be blank")
+    configured_certification_hunt_group = os.environ.get(
+        "NEXTIVA_CERTIFICATION_HUNT_GROUP", "Certification Hunt Group"
+    ).strip()
+    if not configured_certification_hunt_group:
+        raise ConfigError("NEXTIVA_CERTIFICATION_HUNT_GROUP must not be blank")
     output = parsed.output or Path("reports") / (
         f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
     )
@@ -82,15 +87,24 @@ def _run_weekly_report(arguments: list[str]) -> int:
         os.environ.get("NEXTIVA_HOLIDAY_CACHE_FILE", "")
         or raw.with_suffix(".opm-holidays.ics")
     )
+    refresh_failed = False
+
+    def note_refresh_failure() -> None:
+        nonlocal refresh_failed
+        refresh_failed = True
+
     holiday_calendar, used_cache = resolve_holiday_calendar(
         week.prior.start,
         week.end,
         cache_path=cache,
         overrides_path=overrides_file,
         url=os.environ.get("NEXTIVA_OPM_CALENDAR_URL", "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics"),
+        refresh_failure_handler=note_refresh_failure,
     )
-    if used_cache:
+    if refresh_failed:
         logger.warning("Using cached OPM holiday calendar after refresh failure")
+    elif used_cache:
+        logger.info("Using validated cached OPM holiday calendar")
     # The analysis and candidate CSVs are derived from the raw audit trail.
     # Rebuild them immediately before every weekly report so a manual raw-CSV
     # update cannot leave the dashboard reading yesterday's derived data.
@@ -125,11 +139,11 @@ def _run_weekly_report(arguments: list[str]) -> int:
         )
         rows = load_candidates(candidates)
     render_weekly_report(
-        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined", holiday_calendar),
-        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined", holiday_calendar),
+        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
+        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
         output,
-        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", holiday_calendar),
-        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar),
+        membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
+        certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
     )
     logger.info("Wrote weekly report to {}", output)
     return 0

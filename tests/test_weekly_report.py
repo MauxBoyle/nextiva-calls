@@ -151,6 +151,21 @@ def test_weekly_report_uses_safe_dash_for_zero_kpi_denominators(tmp_path):
     assert _percentage(summary.attribution_coverage_numerator, summary.attribution_coverage_denominator) == "—"
 
 
+def test_weekly_report_labels_inferred_coverage(tmp_path):
+    base = summarize_week([], Week(date(2026, 8, 17)), AgentLookup({}, {}), tmp_path / "missing.sqlite3")
+    summary = replace(
+        base,
+        preliminary=False,
+        coverage_inferred=True,
+        data_through=Week(date(2026, 8, 17)).end_at,
+    )
+    output = tmp_path / "inferred.pdf"
+
+    render_weekly_report(summary, summary, output)
+
+    assert b"Data through \\(inferred from call dates\\)" in output.read_bytes()
+
+
 def test_weekly_report_renders_complete_week_insight_evidence(tmp_path):
     base = summarize_week([], Week(date(2026, 8, 17)), AgentLookup({}, {}), tmp_path / "missing.sqlite3")
     current = replace(
