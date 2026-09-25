@@ -437,18 +437,19 @@ def _data_through(path: Path, week: Week) -> datetime | None:
 def _inferred_candidate_coverage(
     candidates: list[dict[str, str]], week: Week
 ) -> datetime | None:
-    """Infer coverage from the full candidate export when metadata is absent."""
+    """Infer coverage only when candidates include every date in ``week``."""
     dates = [
         when.date()
         for row in candidates
         if (when := _timestamp(row.get("call_timestamp_ct", ""))) is not None
     ]
-    if not dates or min(dates) > week.start or max(dates) < week.end:
+    required_dates = {
+        week.start + timedelta(days=offset)
+        for offset in range((week.end - week.start).days + 1)
+    }
+    if not required_dates.issubset(dates):
         return None
-    return min(
-        week.end_at,
-        datetime.combine(max(dates) + timedelta(days=1), time.min, tzinfo=CENTRAL_TIME),
-    )
+    return week.end_at
 
 
 def summarize_week(

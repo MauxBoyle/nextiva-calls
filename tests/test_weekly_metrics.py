@@ -107,6 +107,19 @@ def test_candidate_date_range_is_transparently_inferred_as_coverage(tmp_path):
     assert summary.data_through == week.end_at
 
 
+def test_candidate_coverage_is_preliminary_when_an_interior_date_is_missing(tmp_path):
+    week = Week(date(2026, 8, 17))
+    candidates = [
+        row(call_timestamp_ct=f"2026-08-{day:02d}T10:00:00-05:00")
+        for day in (17, 18, 19, 21, 22, 23)
+    ]
+
+    summary = summarize_week(candidates, week, lookup(), tmp_path / "missing.sqlite3")
+
+    assert summary.preliminary
+    assert not summary.coverage_inferred
+
+
 def insight_summary(tmp_path, *, calls, voicemail, confirmed, preliminary=False):
     """Small complete summary for testing insight rules without PDF layout."""
     base = summarize_week([], Week(date(2026, 8, 17)), lookup(), tmp_path / "missing.sqlite3")
