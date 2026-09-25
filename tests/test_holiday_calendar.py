@@ -107,6 +107,21 @@ def test_cache_is_used_only_when_it_covers_requested_period(tmp_path):
         )
 
 
+def test_valid_cache_does_not_report_a_refresh_failure(tmp_path):
+    cache = tmp_path / "opm.ics"
+    cache.write_text(ANNUAL_ICALENDAR, encoding="utf-8")
+    failures = []
+
+    _, cached = resolve_holiday_calendar(
+        date(2026, 1, 1), date(2026, 12, 31), cache_path=cache,
+        overrides_path=overrides(tmp_path), today=date(2026, 9, 24),
+        refresh_failure_handler=lambda: failures.append(True),
+    )
+
+    assert cached
+    assert failures == []
+
+
 def test_refreshes_immediately_when_no_cache_covers_this_year(tmp_path):
     calls = []
     calendar, cached = resolve_holiday_calendar(

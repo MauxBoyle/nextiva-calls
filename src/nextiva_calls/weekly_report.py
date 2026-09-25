@@ -149,7 +149,8 @@ def _metadata_text(summary: WeeklySummary) -> str:
     if summary.data_through is None:
         return "Data through: no continuous metadata-confirmed coverage"
     inclusive = summary.data_through - timedelta(minutes=1)
-    return f"Data through: {inclusive:%b %-d, %Y %-I:%M %p} CT"
+    qualifier = " (inferred from call dates)" if summary.coverage_inferred else ""
+    return f"Data through{qualifier}: {inclusive:%b %-d, %Y %-I:%M %p} CT"
 
 
 def _closure_names(summary: WeeklySummary) -> str:

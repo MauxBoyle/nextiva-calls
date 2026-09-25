@@ -24,6 +24,7 @@ def test_config_defaults_and_derived_state_file():
     assert config.candidate_calls_file == Path("NextivaCallData.candidate-calls.csv")
     assert config.holiday_status_file == Path("NextivaCallData.holiday-refresh.json")
     assert config.membership_hunt_group == "Membership"
+    assert config.certification_hunt_group == "Certification Hunt Group"
     assert config.membership_simultaneous_from == "2026-08-15T00:00:00-05:00"
     assert config.agent_lookup_file == Path("agent_lookup.csv")
     assert config.closure_dates_file == Path("closure_dates.csv")
@@ -44,6 +45,7 @@ def test_config_custom_values():
             "NEXTIVA_CANDIDATE_CALLS_FILE": "candidates/custom.csv",
             "NEXTIVA_HOLIDAY_STATUS_FILE": "status/holiday.json",
             "NEXTIVA_MEMBERSHIP_HUNT_GROUP": "Reception",
+            "NEXTIVA_CERTIFICATION_HUNT_GROUP": "CertHuntGroup",
             "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-16T00:00:00-05:00",
             "NEXTIVA_AGENT_LOOKUP_FILE": "lookups/agents.csv",
             "NEXTIVA_CLOSURE_DATES_FILE": "closure_dates.csv",
@@ -57,6 +59,7 @@ def test_config_custom_values():
     assert config.candidate_calls_file == Path("candidates/custom.csv")
     assert config.holiday_status_file == Path("status/holiday.json")
     assert config.membership_hunt_group == "Reception"
+    assert config.certification_hunt_group == "CertHuntGroup"
     assert config.agent_lookup_file == Path("lookups/agents.csv")
     assert config.closure_dates_file == Path("closure_dates.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com", "reports.example.test"})
@@ -94,6 +97,7 @@ def test_config_requires_values_without_leaking_password(missing):
             "must differ",
         ),
         ({"NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "tomorrow"}, "ISO-8601"),
+        ({"NEXTIVA_CERTIFICATION_HUNT_GROUP": " "}, "must not be blank"),
         ({"NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-15T00:00:00"}, "timezone"),
         ({"EMAIL_IMAP_SERVER": "  "}, "must not be blank"),
         ({"NEXTIVA_EMAIL_SENDER": "not-an-address"}, "email address"),

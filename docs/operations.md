@@ -10,10 +10,10 @@ Keep these local files together and backed up: raw `NextivaCallData.csv`,
 lookup CSV, and `closure_dates.csv`. The raw CSV and metadata database are the
 evidence trail; do not delete them to fix an error.
 
-The report uses Central Time. **PRELIMINARY** means the metadata does not prove
-continuous coverage for a full selected week. “Data through” is the latest
-continuous metadata-confirmed boundary in that week, not merely the latest call
-shown. Treat a preliminary report as a snapshot, not a completed trend.
+The report uses Central Time. **PRELIMINARY** means neither explicit metadata
+nor inferred candidate-date coverage spans a full selected week. When Nextiva
+omits a labelled range, “Data through” explicitly says it was inferred from call
+dates. Treat a preliminary report as a snapshot, not a completed trend.
 
 ## Daily import checklist
 
@@ -55,7 +55,7 @@ the raw CSV, but do not commit either. A weekly PDF still needs a usable calenda
 ## What the PDF means
 
 The dashboard scope is the combined union of calls to the configured Membership
-hunt group, the code-managed Certification hunt group, or a matching Membership
+hunt group, the configured Certification hunt group, or a matching Membership
 or Certification agent offer. A cross-department call counts once in combined
 totals and can appear in both department-detail sections. Every scoped call,
 including voicemail-only, weekend, holiday, and after-hours calls, is in the
@@ -108,11 +108,11 @@ analysis and candidate data before reporting that period.
 
 ### Change Membership routing
 
-Only `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
+`NEXTIVA_MEMBERSHIP_HUNT_GROUP`, `NEXTIVA_CERTIFICATION_HUNT_GROUP`, and
 `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` are manager-configurable. The timestamp
 needs an offset, for example `2026-08-15T00:00:00-05:00`. Change them together,
-record why and when, then rerun an import. Reception, Certification, and
-Bookstore comparison-group logic is code-managed and needs a developer change.
+record why and when, then rerun an import. Reception and Bookstore comparison
+group logic is code-managed and needs a developer change.
 
 ## Manual evidence trail for a future outbound question
 

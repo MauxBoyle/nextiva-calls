@@ -34,6 +34,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `NEXTIVA_ANALYSIS_FILE` | No | derived beside CSV | Duplicate-free analysis CSV |
 | `NEXTIVA_CANDIDATE_CALLS_FILE` | No | derived beside CSV | Reconstructed candidate-call CSV |
 | `NEXTIVA_MEMBERSHIP_HUNT_GROUP` | No | `Membership` | Hunt group with a routing-policy boundary |
+| `NEXTIVA_CERTIFICATION_HUNT_GROUP` | No | `Certification Hunt Group` | Source hunt group for Certification calls |
 | `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` | No | `2026-08-15T00:00:00-05:00` | Inclusive Central-time simultaneous-ring start |
 | `LOG_LEVEL` | No | `INFO` | Console log level |
 | `LOG_FILE` | No | `app.log` | Debug log location; blank disables it |
@@ -69,7 +70,7 @@ For the repeatable operating routine, metric definitions, safe configuration
 changes, and failure handling, see the [manager operating runbook](operations.md).
 
 Headline metrics, business-hours coverage, and the heatmap include the combined
-union of calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP`, the literal `Certification`
+union of calls to `NEXTIVA_MEMBERSHIP_HUNT_GROUP`, the configured Certification
 hunt group, and calls that offer an exact lookup phone-number match or a uniquely
 mapped final-four extension for a Membership or Certification agent. A call that
 matches both departments counts once in these combined totals. Every scoped call
@@ -106,11 +107,10 @@ statuses are shown as data-quality exclusions and never enter the rate. A
 zero-offer agent displays `N/A`. Simultaneous routing can offer one call to
 multiple agents, so agent offers are not call counts.
 
-The report is visibly **PRELIMINARY** when valid report periods in the metadata
-database do not continuously cover every moment of either selected week. Missing,
-invalid, or gapped metadata therefore keeps the label even if calls are present.
-“Data through” shows the selected week’s latest continuous metadata-confirmed
-coverage boundary in Central Time.
+The report is visibly **PRELIMINARY** when explicit report periods and inferred
+candidate-date coverage both fail to cover every moment of either selected week.
+When Nextiva omits a labelled range, its earliest and latest valid call dates
+provide inferred coverage and “Data through” says so.
 
 The automated-insights page has documented, deliberately narrow rules. It
 compares only combined-scope voicemail rate and confirmed-human-answer rate. A
@@ -219,7 +219,7 @@ voicemail, unanswered, unknown, and ambiguous calls.
 
 The default assumption is that `Membership` changed from sequential to
 simultaneous ringing at midnight Central Time on August 15, 2026, inclusive.
-Update `NEXTIVA_MEMBERSHIP_HUNT_GROUP` and
+Update `NEXTIVA_MEMBERSHIP_HUNT_GROUP`, `NEXTIVA_CERTIFICATION_HUNT_GROUP`, and
 `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` together when that business rule changes;
 the timestamp must be ISO-8601 and include its offset. Other hunt groups remain
 sequential.

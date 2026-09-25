@@ -149,6 +149,19 @@ def test_load_report_waits_for_matching_table_and_always_quits():
     assert driver.quit_called is True
 
 
+def test_load_report_infers_period_when_nextiva_omits_its_label():
+    driver = Driver([valid_table()])
+
+    result = load_report(
+        "https://ct.nextiva.com/inactive", 7,
+        browser_factory=lambda: driver, wait_factory=ImmediateWait,
+    )
+
+    assert result.period_start.date().isoformat() == "2026-01-02"
+    assert result.period_end.date().isoformat() == "2026-01-02"
+    assert result.warnings == ("Report period inferred from earliest and latest call dates",)
+
+
 def test_load_report_supports_nextiva_body_table_without_header_cells():
     cells = [
         Element(text=value)

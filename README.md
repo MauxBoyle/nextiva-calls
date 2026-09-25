@@ -101,7 +101,8 @@ cp .env.example .env
   it to make the working tree clean.
   `NEXTIVA_CANDIDATE_CALLS_FILE` defaults to
   `NextivaCallData.candidate-calls.csv` beside the raw export.
-- Routing defaults: `NEXTIVA_MEMBERSHIP_HUNT_GROUP=Membership` and
+- Routing defaults: `NEXTIVA_MEMBERSHIP_HUNT_GROUP=Membership`,
+  `NEXTIVA_CERTIFICATION_HUNT_GROUP=Certification Hunt Group`, and
   `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM=2026-08-15T00:00:00-05:00`. The latter
   is midnight Central Time on August 15, 2026; it is inclusive and must include
   a timezone offset. Change these two settings if the Membership routing policy
@@ -182,7 +183,7 @@ definitions, and evidence procedures, use the [manager operating runbook](docs/o
 seven days. Its default period ends yesterday, avoiding partial current-day
 data. Headline metrics, business-hours coverage, and the heatmap use the
 combined Membership + Certification scope: calls to the configured
-`NEXTIVA_MEMBERSHIP_HUNT_GROUP`, the literal `Certification` hunt group, or
+`NEXTIVA_MEMBERSHIP_HUNT_GROUP`, `NEXTIVA_CERTIFICATION_HUNT_GROUP`, or
 calls offering a matching Membership or Certification agent (exact number or a
 uniquely mapped final-four extension). This is a union: a cross-department call
 counts once in combined totals. Every scoped call is included, including
@@ -227,11 +228,11 @@ unknown attribution`, `Answered / unattributed`, and `Ambiguous` outcomes.
 `Forwarded / routing only` is not connected. A zero denominator is displayed as
 a dash.
 
-A week is marked **PRELIMINARY** unless valid report-period metadata in
-`NEXTIVA_METADATA_FILE` continuously covers the entire week. Missing, invalid,
-or gapped metadata keeps the label visible even when candidate calls exist.
-“Data through” is the latest continuous metadata-confirmed coverage boundary in
-the selected week, shown in Central Time.
+A week is marked **PRELIMINARY** unless explicit report metadata or inferred
+candidate-date coverage continuously covers the entire week. When Nextiva omits
+a labelled period, the earliest and latest valid call dates provide inferred
+coverage and “Data through” says so. Missing, invalid, or gapped coverage keeps
+the label visible.
 
 The automated-insights page compares only the combined-scope voicemail rate and
 confirmed-human-answer rate. It calls a weekly rate change significant only when

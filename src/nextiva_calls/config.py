@@ -40,6 +40,7 @@ class Config:
     holiday_status_file: Path | None = None
     opm_calendar_url: str = "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics"
     membership_hunt_group: str = "Membership"
+    certification_hunt_group: str = "Certification Hunt Group"
     membership_simultaneous_from: str = "2026-08-15T00:00:00-05:00"
 
     @classmethod
@@ -119,6 +120,11 @@ class Config:
         ).strip()
         if not membership_hunt_group:
             raise ConfigError("NEXTIVA_MEMBERSHIP_HUNT_GROUP must not be blank")
+        certification_hunt_group = values.get(
+            "NEXTIVA_CERTIFICATION_HUNT_GROUP", "Certification Hunt Group"
+        ).strip()
+        if not certification_hunt_group:
+            raise ConfigError("NEXTIVA_CERTIFICATION_HUNT_GROUP must not be blank")
         membership_simultaneous_from = values.get(
             "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM", "2026-08-15T00:00:00-05:00"
         ).strip()
@@ -200,5 +206,6 @@ class Config:
             holiday_status_file=holiday_status,
             opm_calendar_url=opm_calendar_url,
             membership_hunt_group=membership_hunt_group,
+            certification_hunt_group=certification_hunt_group,
             membership_simultaneous_from=membership_simultaneous_from,
         )
