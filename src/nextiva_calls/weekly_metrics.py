@@ -27,6 +27,14 @@ OUTCOMES = (
     "Ambiguous",
 )
 OTHER = "Other / Unattributed"
+RECONCILIATION_AGENTS = ("Garrett", "Tye", "Leah", "Ed", "Karla")
+MULTIPLE_NAMED_AGENTS = "Multiple named agents"
+OTHER_CONNECTED_CALLS = "Other"
+CONNECTED_CALL_ATTRIBUTION_CATEGORIES = (
+    *RECONCILIATION_AGENTS,
+    MULTIPLE_NAMED_AGENTS,
+    OTHER_CONNECTED_CALLS,
+)
 OUTCOME_BUCKETS = ("Yes", "No", "Voicemail", "Unknown / Ambiguous")
 REPORTING_DEPARTMENTS = ("Membership", "Certification")
 COMBINED_SCOPE = "combined"
@@ -84,6 +92,7 @@ class WeeklySummary:
     connected_calls: int
     attribution_coverage_numerator: int
     attribution_coverage_denominator: int
+    unique_connected_call_attribution: dict[str, int]
     outcomes: dict[str, int]
     routing_attempts: int
     durations: DurationStats
@@ -498,6 +507,7 @@ def summarize_week(
             "Ambiguous",
         )
     )
+    unique_connected_call_attribution: Counter[str] = Counter()
     # Compatibility for third-party callers of the old date-set API.  The CLI
     # and imports use ``holiday_calendar`` exclusively.
     if holiday_calendar is None and closure_dates is not None:
@@ -576,6 +586,27 @@ def summarize_week(
             for item in row.get("confirmed_answered_agent_destinations", "").split(";")
             if item
         ]
+        # This is a call-level reconciliation, unlike the recorded-offer table
+        # below. A call is placed in exactly one category, even when a routing
+        # event included several offered destinations.
+        if outcome in {
+            "Confirmed human answered",
+            "Connected / unknown attribution",
+            "Answered / unattributed",
+            "Ambiguous",
+        }:
+            named_answers = {
+                agent.display_name
+                for item in confirmed
+                if (agent := _agent_destination(item, lookup)) is not None
+                and agent.display_name in RECONCILIATION_AGENTS
+            }
+            if len(named_answers) == 1:
+                unique_connected_call_attribution[next(iter(named_answers))] += 1
+            elif len(named_answers) > 1:
+                unique_connected_call_attribution[MULTIPLE_NAMED_AGENTS] += 1
+            else:
+                unique_connected_call_attribution[OTHER_CONNECTED_CALLS] += 1
         # Reconstruction only puts known-agent ordinary Yes segments here.  A
         # malformed candidate is still kept conservative: it receives no credit.
         # Both fields are derived from the same normalized segments, but use
@@ -644,6 +675,10 @@ def summarize_week(
         connected_calls=connected_calls,
         attribution_coverage_numerator=confirmed_known_agent_answers,
         attribution_coverage_denominator=connected_calls,
+        unique_connected_call_attribution={
+            category: unique_connected_call_attribution[category]
+            for category in CONNECTED_CALL_ATTRIBUTION_CATEGORIES
+        },
         outcomes={key: outcomes[key] for key in OUTCOMES},
         routing_attempts=attempts,
         durations=duration_stats,

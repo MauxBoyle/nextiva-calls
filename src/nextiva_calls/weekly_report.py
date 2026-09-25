@@ -11,6 +11,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
 from reportlab.platypus import (
     Flowable,
+    KeepTogether,
     PageBreak,
     Paragraph,
     SimpleDocTemplate,
@@ -21,6 +22,7 @@ from reportlab.platypus import (
 
 from nextiva_calls.segments import CENTRAL_TIME
 from nextiva_calls.weekly_metrics import (
+    CONNECTED_CALL_ATTRIBUTION_CATEGORIES,
     OUTCOME_BUCKETS,
     WeeklyInsight,
     WeeklySummary,
@@ -29,6 +31,11 @@ from nextiva_calls.weekly_metrics import (
 
 NAVY, PALE, RED = colors.HexColor("#123B5D"), colors.HexColor("#EAF2F7"), colors.HexColor("#A61B1B")
 DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+# Keep the chart's coordinate system identical to the table directly below it.
+# That makes every bar sit over the number for the same day.
+OUTCOME_COLUMN_WIDTH = 1.13 * inch
+DAILY_OUTCOME_COLUMN_WIDTH = .42 * inch
+DAILY_OUTCOME_DAY_COUNT = 14
 
 
 def _seconds(value: float) -> str:
@@ -60,13 +67,14 @@ def _table(rows: list[list[object]], widths: list[float] | None = None, *, small
         ("GRID", (0, 0), (-1, -1), .25, colors.HexColor("#AAB8C2")),
         ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, PALE]),
         ("ALIGN", (1, 1), (-1, -1), "RIGHT"), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+        ("TOPPADDING", (0, 0), (-1, -1), 1.5 if small else 3.5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5 if small else 3.5),
     ]))
     return table
 
 
 class StackedBarChart(Flowable):
-    """Compact stacked weekday outcome chart for one department call scope."""
+    """Compact stacked daily outcome chart for a prior/current department pair."""
 
     COLORS = {
         "Yes": colors.HexColor("#2176AE"),
@@ -75,22 +83,29 @@ class StackedBarChart(Flowable):
         "Unknown / Ambiguous": colors.HexColor("#6C757D"),
     }
 
-    def __init__(self, summary: WeeklySummary, department: str = "Membership", height: float = 1.05 * inch):
+    def __init__(
+        self,
+        summary: WeeklySummary,
+        department: str = "Membership",
+        height: float = 1.1 * inch,
+        prior: WeeklySummary | None = None,
+    ):
         super().__init__()
-        self.summary, self.department, self.width, self.height = summary, department, 7 * inch, height
-        self.days = tuple(
-            (summary.week.start + timedelta(days=offset)).strftime("%a")
+        self.summary, self.prior, self.department = summary, prior, department
+        self.width = OUTCOME_COLUMN_WIDTH + DAILY_OUTCOME_COLUMN_WIDTH * DAILY_OUTCOME_DAY_COUNT
+        self.height = height
+        # The table below is centered by ReportLab, so center the chart too.
+        # Its left Outcome-column space then starts at exactly the same x-position.
+        self.hAlign = "CENTER"
+        summaries = (prior, summary) if prior is not None else (summary,)
+        self.entries = tuple(
+            (item, item.week.start + timedelta(days=offset))
+            for item in summaries
             for offset in range(7)
         )
-        self.day_labels = tuple(
-            self._day_label(summary.week.start + timedelta(days=offset))
-            for offset in range(7)
-        )
-        self.buckets = [
-            bucket for bucket in OUTCOME_BUCKETS
-            if bucket != "Unknown / Ambiguous"
-            or any(summary.weekday_outcomes[(day, bucket)] for day in self.days)
-        ]
+        self.days = tuple(day.strftime("%a") for _, day in self.entries)
+        self.day_labels = tuple(self._day_label(day) for _, day in self.entries)
+        self.buckets = list(OUTCOME_BUCKETS)
 
     def _day_label(self, day) -> str:
         holiday = self.summary.holidays
@@ -103,46 +118,65 @@ class StackedBarChart(Flowable):
         canvas = self.canv
         canvas.setFont("Helvetica-Bold", 8)
         canvas.setFillColor(NAVY)
-        canvas.drawString(0, self.height - 9, f"Daily {self.department} call outcomes")
+        canvas.drawString(0, self.height - 9, f"Daily {self.department} call outcomes (prior week | current week)")
         legend_x = 150
         canvas.setFont("Helvetica", 6.5)
         for bucket in self.buckets:
             canvas.setFillColor(self.COLORS[bucket])
-            canvas.rect(legend_x, self.height - 11, 6, 6, fill=1, stroke=0)
+            canvas.rect(legend_x, self.height - 24, 6, 6, fill=1, stroke=0)
             canvas.setFillColor(colors.black)
-            canvas.drawString(legend_x + 8, self.height - 10, bucket)
+            canvas.drawString(legend_x + 8, self.height - 23, bucket)
             legend_x += 22 + canvas.stringWidth(bucket, "Helvetica", 6.5)
-        totals = [
-            sum(self.summary.weekday_outcomes[(day, bucket)] for bucket in self.buckets)
-            for day in self.days
-        ]
-        maximum, chart_height, left, bottom = max(totals, default=0) or 1, self.height - 34, 24, 13
-        step = (self.width - left - 4) / len(DAYS)
+        totals = [sum(item.weekday_outcomes[(day.strftime("%a"), bucket)] for bucket in self.buckets) for item, day in self.entries]
+        maximum, chart_height = max(totals, default=0) or 1, self.height - 47
+        left, bottom = OUTCOME_COLUMN_WIDTH, 13
+        step = DAILY_OUTCOME_COLUMN_WIDTH
         bar_width = step * .62
         canvas.setStrokeColor(colors.HexColor("#9BAAB5"))
-        canvas.line(left, bottom, self.width - 4, bottom)
-        for index, (day, label, total) in enumerate(zip(self.days, self.day_labels, totals, strict=True)):
+        canvas.line(left, bottom, self.width, bottom)
+        for index, ((item, calendar_day), day, label, total) in enumerate(zip(self.entries, self.days, self.day_labels, totals, strict=True)):
             x, stacked = left + index * step + (step - bar_width) / 2, 0
             for bucket in self.buckets:
-                value = self.summary.weekday_outcomes[(day, bucket)]
+                value = item.weekday_outcomes[(day, bucket)]
                 height = chart_height * value / maximum
                 if value:
                     canvas.setFillColor(self.COLORS[bucket])
                     canvas.rect(x, bottom + stacked, bar_width, height, fill=1, stroke=0)
                     stacked += height
             canvas.setFillColor(colors.black)
-            canvas.setFont("Helvetica", 5.2 if len(label) > 8 else 6.5)
-            canvas.drawCentredString(x + bar_width / 2, 2, day)
+            canvas.setFont("Helvetica", 5.2)
+            canvas.drawCentredString(x + bar_width / 2, 2, f"{day[0]}:{calendar_day.month}/{calendar_day.day}")
             if label != day:
                 # Retain the full date-aware label in the PDF text layer even
                 # where a compact chart needs its weekday abbreviation below.
                 canvas.drawCentredString(x + bar_width / 2, 8, label)
             if total:
                 canvas.drawCentredString(x + bar_width / 2, bottom + stacked + 2, str(total))
+        if self.prior is not None:
+            boundary = left + 7 * step
+            canvas.setStrokeColor(NAVY)
+            canvas.setLineWidth(.8)
+            canvas.line(boundary, bottom - 1, boundary, bottom + chart_height + 1)
 
 
 def _heading(story: list[object], styles: object, text: str) -> None:
     story.extend([Spacer(1, .09 * inch), Paragraph(text, styles["Heading2"]), Spacer(1, .035 * inch)])
+
+
+def _department_contribution_line(
+    membership: WeeklySummary,
+    certification: WeeklySummary | None,
+    combined: WeeklySummary,
+) -> str:
+    """Return the compact department total shown below the headline heading."""
+    parts = [f"{membership.calls} Membership"]
+    if certification is not None:
+        parts.append(f"{certification.calls} Certification")
+    department_total = membership.calls + (certification.calls if certification is not None else 0)
+    detail = " + ".join(parts)
+    if department_total == combined.calls:
+        return f"{detail} = {combined.calls} total calls this week"
+    return f"{detail}; {combined.calls} combined total calls this week (some calls overlap)"
 
 
 def _metadata_text(summary: WeeklySummary) -> str:
@@ -179,15 +213,35 @@ def _agent_rows(current: WeeklySummary) -> list[list[object]]:
     return rows
 
 
-def _outcome_table(summary: WeeklySummary) -> Table:
-    """Return the detailed outcome reconciliation for one department."""
-    return _table([
-        ["Outcome", "Calls", "Outcome", "Calls"],
-        ["Forwarded / routing only", summary.outcomes["Forwarded / routing only"], "Voicemail", summary.outcomes["Voicemail"]],
-        ["Connected / unknown attribution", summary.outcomes["Connected / unknown attribution"], "Answered / unattributed", summary.outcomes["Answered / unattributed"]],
-        ["Ambiguous", summary.outcomes["Ambiguous"], "Unknown", summary.outcomes["Unknown"]],
-        ["Unanswered", summary.outcomes["Unanswered"], "Confirmed human answered", summary.confirmed_known_agent_answers],
-    ], [2.1*inch, .55*inch, 2.1*inch, .55*inch], small=True)
+def _daily_outcome_table(prior: WeeklySummary, current: WeeklySummary) -> Table:
+    """Return 14 daily buckets in exactly the same order as the chart."""
+    summaries = (prior, current)
+    dates = [item.week.start + timedelta(days=offset) for item in summaries for offset in range(7)]
+    headers = ["Outcome"] + [f"{day.strftime('%a')[0]}:{day.month}/{day.day}" for day in dates]
+    rows: list[list[object]] = [headers]
+    for bucket in OUTCOME_BUCKETS:
+        rows.append([bucket] + [
+            summary.weekday_outcomes[(day.strftime("%a"), bucket)]
+            for summary in summaries
+            for day in (summary.week.start + timedelta(days=offset) for offset in range(7))
+        ])
+    rows.append(["Daily total"] + [
+        sum(summary.weekday_outcomes[(day.strftime("%a"), bucket)] for bucket in OUTCOME_BUCKETS)
+        for summary in summaries
+        for day in (summary.week.start + timedelta(days=offset) for offset in range(7))
+    ])
+    return _table(
+        rows,
+        [OUTCOME_COLUMN_WIDTH] + [DAILY_OUTCOME_COLUMN_WIDTH] * DAILY_OUTCOME_DAY_COUNT,
+        small=True,
+    )
+
+
+def _unique_connected_call_rows(summary: WeeklySummary) -> list[list[object]]:
+    rows: list[list[object]] = [["Answer attribution", "Unique connected calls"]]
+    rows.extend([[category, summary.unique_connected_call_attribution[category]] for category in CONNECTED_CALL_ATTRIBUTION_CATEGORIES])
+    rows.append(["Total connected calls", summary.connected_calls])
+    return rows
 
 
 def _insight_paragraph(insight: WeeklyInsight, styles: object) -> Paragraph:
@@ -202,6 +256,8 @@ def render_weekly_report(
     generated_at: datetime | None = None,
     membership: WeeklySummary | None = None,
     certification: WeeklySummary | None = None,
+    prior_membership: WeeklySummary | None = None,
+    prior_certification: WeeklySummary | None = None,
 ) -> None:
     """Write a fixed four-page US-Letter manager dashboard without phone numbers."""
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -212,6 +268,7 @@ def render_weekly_report(
     styles["Heading2"].textColor = NAVY
     styles["Heading2"].fontSize = 11
     styles.add(ParagraphStyle(name="Tiny", parent=styles["Normal"], fontSize=7.5, leading=9))
+    styles.add(ParagraphStyle(name="ReportMeta", parent=styles["Normal"], fontSize=8, leading=9.5))
     story: list[object] = []
     period, prior_period = f"{current.week.start:%b %-d, %Y} – {current.week.end:%b %-d, %Y}", f"{prior.week.start:%b %-d} – {prior.week.end:%b %-d, %Y}"
 
@@ -219,9 +276,9 @@ def render_weekly_report(
     # integrations while the CLI supplies the department-specific views.
     membership = membership or current
     story.append(Paragraph("Weekly Membership + Certification Call Dashboard", styles["Title"]))
-    story.append(Paragraph(f"Reporting period: <b>{period}</b> (Central Time)<br/>Prior period: {prior_period}<br/>{_metadata_text(current)}<br/>Generated: {generated_at:%b %-d, %Y %-I:%M %p %Z}", styles["Normal"]))
+    story.append(Paragraph(f"Reporting period: <b>{period}</b> (Central Time)<br/>Prior period: {prior_period}<br/>{_metadata_text(current)}<br/>Generated: {generated_at:%b %-d, %Y %-I:%M %p %Z}", styles["ReportMeta"]))
     if current.preliminary or prior.preliminary:
-        story.extend([Spacer(1, .06 * inch), Paragraph("<font color='#A61B1B'><b>PRELIMINARY</b></font> — metadata coverage is incomplete for one or both comparison weeks. Use directional results with care.", styles["Normal"])])
+        story.extend([Spacer(1, .04 * inch), Paragraph("<font color='#A61B1B'><b>PRELIMINARY</b></font> — metadata coverage is incomplete for one or both comparison weeks. Use directional results with care.", styles["ReportMeta"])])
     comparison_closures = [
         text
         for text in (_closure_names(current), _closure_names(prior))
@@ -235,27 +292,43 @@ def render_weekly_report(
         story.append(Paragraph("<b>Calendar coverage warning:</b> the available holiday calendar does not extend beyond one or both comparison periods.", styles["Tiny"]))
     if current.holidays:
         story.append(Paragraph(f"<b>Current-week closure note:</b> {_closure_names(current)}", styles["Tiny"]))
-    _heading(story, styles, "Combined Membership + Certification headline metrics")
+    _heading(
+        story,
+        styles,
+        "Combined Membership + Certification headline metrics"
+        f"<br/><font name='Helvetica' size='8'>{_department_contribution_line(membership, certification, current)}</font>",
+    )
     confirmed = "Confirmed human answered"
     story.append(_table([["Measure", "Current", "Prior", "Change"], ["All scoped inbound calls", current.eligible_inbound_calls, prior.eligible_inbound_calls, _delta(current.eligible_inbound_calls-prior.eligible_inbound_calls)], [confirmed, current.confirmed_known_agent_answers, prior.confirmed_known_agent_answers, _delta(current.confirmed_known_agent_answers-prior.confirmed_known_agent_answers)], ["% confirmed human answered", _percentage(current.confirmed_known_agent_answers, current.eligible_inbound_calls), _percentage(prior.confirmed_known_agent_answers, prior.eligible_inbound_calls), _percentage_delta(current.confirmed_known_agent_answers, current.eligible_inbound_calls, prior.confirmed_known_agent_answers, prior.eligible_inbound_calls)], ["Attribution coverage", _percentage(current.attribution_coverage_numerator, current.attribution_coverage_denominator), _percentage(prior.attribution_coverage_numerator, prior.attribution_coverage_denominator), _percentage_delta(current.attribution_coverage_numerator, current.attribution_coverage_denominator, prior.attribution_coverage_numerator, prior.attribution_coverage_denominator)], ["Answered-call talk time", _seconds(current.answered_talk_seconds), _seconds(prior.answered_talk_seconds), _seconds(current.answered_talk_seconds-prior.answered_talk_seconds)]], [2.6*inch, 1.25*inch, 1.25*inch, 1.25*inch]))
-    _heading(story, styles, "Current-week department contribution (combined total)")
-    contribution_rows = [["Membership", membership.calls, _percentage(membership.calls, current.calls)]]
+    story.append(Paragraph(
+        "<b>Attribution Coverage:</b> confirmed known-agent answers divided by connected calls. "
+        "Connected calls include confirmed human answered, connected / unknown attribution, answered / unattributed, "
+        "and ambiguous outcomes; forwarded / routing-only calls are excluded.",
+        styles["Tiny"],
+    ))
+    _heading(story, styles, "Department-specific daily outcomes (prior week | current week)")
+    prior_membership = prior_membership or prior
+    story.extend([StackedBarChart(membership, "Membership", prior=prior_membership), _daily_outcome_table(prior_membership, membership)])
     if certification is not None:
-        contribution_rows.append(["Certification", certification.calls, _percentage(certification.calls, current.calls)])
-    story.append(_table([["Department", "Calls", "Share of combined"]] + contribution_rows, [2.4*inch, 1*inch, 1.35*inch], small=True))
-    _heading(story, styles, "Department-specific daily outcomes")
-    if membership.calls:
-        story.append(StackedBarChart(membership, "Membership"))
-        story.append(_outcome_table(membership))
-    if certification is not None and certification.calls:
-        story.extend([Spacer(1, .05 * inch), StackedBarChart(certification, "Certification"), _outcome_table(certification)])
-    if not membership.calls and (certification is None or not certification.calls):
-        story.append(Paragraph("No Membership or Certification calls were available for department outcome detail.", styles["Normal"]))
-    story.extend([Spacer(1, .04 * inch), PageBreak()])
+        prior_certification = prior_certification or prior
+        story.extend([Spacer(1, .04 * inch), StackedBarChart(certification, "Certification", prior=prior_certification), _daily_outcome_table(prior_certification, certification)])
+    # The preceding 14-day section fills page one. Let ReportLab advance
+    # naturally so an explicit break cannot introduce an otherwise blank page.
 
-    story.append(Paragraph("Combined coverage and routing detail", styles["Title"]))
-    _heading(story, styles, "Business-hours coverage (combined Membership + Certification)")
-    story.append(_table([["Time category", "Calls", "Share"]] + [[category, current.time_categories[category], f"{current.time_categories[category] / current.calls:.0%}" if current.calls else "—"] for category in ("Business hours", "After hours", "Weekend", "Holiday")], [2.5*inch, 1*inch, 1*inch]))
+    coverage_table = _table(
+        [["Time category", "Calls", "Share"]]
+        + [[category, current.time_categories[category], f"{current.time_categories[category] / current.calls:.0%}" if current.calls else "—"] for category in ("Business hours", "After hours", "Weekend", "Holiday")],
+        [2.5 * inch, 1 * inch, 1 * inch],
+    )
+    # Keep this short section together, so its title is never stranded at the
+    # bottom of the preceding page without the table it introduces.
+    story.append(KeepTogether([
+        Paragraph("Combined coverage and routing detail", styles["Title"]),
+        Spacer(1, .09 * inch),
+        Paragraph("Business-hours coverage (combined Membership + Certification)", styles["Heading2"]),
+        Spacer(1, .035 * inch),
+        coverage_table,
+    ]))
     _heading(story, styles, "Approved hunt groups (all calls; different scope)")
     story.append(Paragraph("This comparison includes only calls in Reception, Membership, Certification, and Bookstore. It does not include lookup-matched combined candidates routed through other hunt groups, so its total can differ from the combined headline.", styles["Tiny"]))
     story.append(Spacer(1, .035 * inch))
@@ -282,8 +355,11 @@ def render_weekly_report(
     agent_rows = _agent_rows(current)
     _heading(story, styles, "Recorded-offer answer rate by agent")
     story.append(_table(agent_rows, [1.35*inch, .9*inch, .55*inch, .95*inch, .8*inch, 1.2*inch], small=True))
+    _heading(story, styles, "Unique connected calls by answer attribution")
+    story.append(Paragraph("Each connected call appears exactly once in this reconciliation; it is not an offer or a call-agent pair.", styles["Tiny"]))
+    story.append(_table(_unique_connected_call_rows(current), [2.8 * inch, 1.4 * inch], small=True))
     _heading(story, styles, "Definitions and data-quality notes")
-    story.append(Paragraph("Combined metrics, business-hours coverage, and the heatmap use the union of calls to the configured Membership hunt group, the Certification hunt group, or an offered Membership or Certification agent. A cross-department call counts once in combined totals, but appears in each matching department's outcome detail. Department outcome charts and reconciliation tables are intentionally separate and omitted when that department has no calls. The hunt-group comparison is a different scope: all in-period candidates for Reception, Membership, Certification, and Bookstore. Confirmed human answered is the only Yes measure and requires reconstructed known-agent answer evidence. Attribution coverage is confirmed known-agent answers divided by connected calls; connected calls are confirmed answers plus connected / unknown attribution, answered / unattributed, and ambiguous outcomes. Forwarded / routing only is not connected. A recorded offer is one duplicate-free call-agent pair with normalized <b>Yes</b> or <b>No</b>; <b>Yes</b> also counts as an answer. <b>Yes - Forwarded</b> appears only as forwarded away. Unfamiliar statuses appear only as per-agent data-quality exclusions and never enter the rate. A zero-offer rate is N/A.", styles["Normal"]))
+    story.append(Paragraph("Combined metrics, business-hours coverage, and the heatmap use the union of calls to the configured Membership hunt group, the Certification hunt group, or an offered Membership or Certification agent. A cross-department call counts once in combined totals, but appears in each matching department's 14-day outcome detail. The hunt-group comparison is a different scope: all in-period candidates for Reception, Membership, Certification, and Bookstore. Confirmed human answered is the only Yes measure and requires reconstructed known-agent answer evidence. Attribution coverage is confirmed known-agent answers divided by connected calls; connected calls are confirmed answers plus connected / unknown attribution, answered / unattributed, and ambiguous outcomes. Forwarded / routing only is not connected. The unique connected-call reconciliation assigns every connected call to exactly one named agent, Multiple named agents, or Other; it is not an offer measure. A recorded offer is one duplicate-free call-agent pair with normalized <b>Yes</b> or <b>No</b>; <b>Yes</b> also counts as an answer. <b>Yes - Forwarded</b> appears only as forwarded away. Unfamiliar statuses appear only as per-agent data-quality exclusions and never enter the rate. A zero-offer rate is N/A.", styles["Normal"]))
     story.extend([Spacer(1, .06*inch), _table([["Anomaly", "Count"]] + [[name, current.anomalies[name]] for name in ("Ambiguous outcomes", "Unknown outcomes", "Unattributed answers")], [2.6*inch, .9*inch]), Spacer(1, .1*inch)])
     story.append(Paragraph("Duration is the available maximum-duration proxy. This report contains no customer or agent phone numbers, repeat-caller listings, outbound measures, speed-of-answer, wait-time, or agent-miss claims.", styles["Tiny"]))
     story.append(PageBreak())

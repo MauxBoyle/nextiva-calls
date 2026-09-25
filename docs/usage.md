@@ -80,8 +80,9 @@ all in-period candidates limited to Reception, Membership, Certification, and
 Bookstore.
 
 The PDF includes period, data-through, and generation timestamps; separate
-Membership and Certification daily outcome charts and reconciliation tables,
-plus combined coverage, routing, hunt groups, weekday/hour views, and a fourth
+Membership and Certification 14-day daily-outcome charts and matching tables
+(the prior week is first, followed by the current week), plus combined coverage,
+routing, hunt groups, weekday/hour views, and a fourth
 automated-insights page. Outcome
 detail is omitted when a department has no calls; a cross-department call appears
 in both matching department outcome views. The chart's `Yes` bucket contains only `Confirmed human
@@ -106,6 +107,13 @@ answer. `Yes - Forwarded` is counted only as forwarded away. Unfamiliar agent
 statuses are shown as data-quality exclusions and never enter the rate. A
 zero-offer agent displays `N/A`. Simultaneous routing can offer one call to
 multiple agents, so agent offers are not call counts.
+
+The separate **Unique connected calls by answer attribution** table is a
+call-level reconciliation, not an offer table. It assigns every connected call
+exactly once: Garrett, Tye, Leah, Ed, or Karla only when exactly one of those
+names is confirmed; `Multiple named agents` when two or more are confirmed; and
+`Other` for every remaining connected call. Its total equals the connected-call
+denominator used by Attribution Coverage.
 
 The report is visibly **PRELIMINARY** when explicit report periods and inferred
 candidate-date coverage both fail to cover every moment of either selected week.

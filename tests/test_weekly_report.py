@@ -58,8 +58,9 @@ def test_weekly_report_creates_preliminary_pdf(monkeypatch, tmp_path):
     assert b"All scoped inbound calls" in content
     assert b"% confirmed human answered" in content
     assert b"Attribution coverage" in content
-    assert b"Forwarded / routing only" in content
-    assert b"Connected / unknown attribution" in content
+    assert b"Unique connected calls by answer attribution" in content
+    assert b"Multiple named agents" in content
+    assert b"Other" in content
     assert b"Automated insights" in content
     assert b"PRELIMINARY coverage" in content
     assert b"trend observations are suppressed" in content
@@ -293,7 +294,30 @@ def test_combined_dashboard_has_separate_department_outcomes_and_hour_labels(tmp
     content = output.read_bytes()
     assert b"Weekly Membership + Certification Call Dashboard" in content
     assert b"Daily Certification call outcomes" in content
-    assert b"Daily Membership call outcomes" not in content
+    assert b"Daily Membership call outcomes" in content
     assert b"08:00" in content
     assert b"Casey" in content
     assert content.count(b"/Type /Page\n") == 4
+
+
+def test_report_shows_unique_call_reconciliation_and_14_day_department_outcomes(tmp_path):
+    agent = Destination("Garrett", "Membership", "agent")
+    lookup = AgentLookup({"15550101": agent}, {"0101": frozenset({agent})})
+    current = summarize_week([], Week(date(2026, 8, 17)), lookup, tmp_path / "missing.sqlite3")
+    prior = summarize_week([], current.week.prior, lookup, tmp_path / "missing.sqlite3")
+    output = tmp_path / "fourteen-days.pdf"
+
+    render_weekly_report(current, prior, output, membership=current, prior_membership=prior)
+
+    content = output.read_bytes()
+    assert content.find(b"Attribution Coverage:") > content.find(b"Answered-call talk time")
+    assert b"0 Membership = 0 total calls this week" in content
+    assert b"Current-week department contribution" not in content
+    assert b"Unique connected calls by answer attribution" in content
+    for label in (b"Garrett", b"Tye", b"Leah", b"Ed", b"Karla", b"Multiple named agents", b"Other"):
+        assert label in content
+    assert b"Each connected call appears exactly once" in content
+    for header in (b"M:8/10", b"S:8/16", b"M:8/17", b"S:8/23"):
+        assert header in content
+    for bucket in (b"Yes", b"No", b"Voicemail", b"Unknown / Ambiguous", b"Daily total"):
+        assert bucket in content
