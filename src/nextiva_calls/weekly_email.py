@@ -21,7 +21,7 @@ class WeeklyReportEmailError(ValueError):
 _EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def load_recipients(path: Path = Path("weekly_report_recipients.txt")) -> tuple[str, ...]:
+def load_recipients(path: Path = Path("config/weekly_report_recipients.txt")) -> tuple[str, ...]:
     """Load one valid recipient address per non-comment line."""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -95,7 +95,7 @@ def send_weekly_report(
     app_password: str,
     *,
     test: bool = False,
-    recipients_file: Path = Path("weekly_report_recipients.txt"),
+    recipients_file: Path = Path("config/weekly_report_recipients.txt"),
     smtp_factory: SmtpFactory = smtplib.SMTP_SSL,
 ) -> None:
     """Deliver a dashboard, with a sender-only route for safe test sends."""

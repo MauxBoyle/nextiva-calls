@@ -149,14 +149,14 @@ def test_clean_segment_uses_configured_closure_dates(tmp_path):
 
 @pytest.mark.parametrize(
     "closure",
-    sorted(load_closure_dates(Path(__file__).parents[1] / "closure_dates.csv")),
+    sorted(load_closure_dates(Path(__file__).parents[1] / "config" / "closure_dates.csv")),
 )
 def test_closures_are_holidays_and_not_business_hours(tmp_path, closure):
     lookup = make_lookup(tmp_path, "phone_number,display_name,department,destination_type\n5550200,Alex,Membership,agent\n")
     cleaned = clean_segment(
         raw_row(timestamp=f"{closure} 10:00 AM"),
         lookup,
-        load_closure_dates(Path(__file__).parents[1] / "closure_dates.csv"),
+        load_closure_dates(Path(__file__).parents[1] / "config" / "closure_dates.csv"),
     )
     assert cleaned[ANALYSIS_COLUMNS.index("is_holiday")] == "True"
     assert cleaned[ANALYSIS_COLUMNS.index("is_business_hours")] == "False"

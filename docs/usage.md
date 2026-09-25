@@ -14,13 +14,19 @@ local `.env`; do not use a normal Google password and do not commit this file.
 
 ## Configuration
 
+Project settings tracked in Git are in `config/`. Operational raw, derived,
+cache, state, and log files default to `data/`; Git ignores them except for the
+tracked audit history at `data/NextivaCallData.metadata.sqlite3`. See the
+[manager operating runbook](operations.md#project-file-layout-and-one-time-migration)
+for safe manual migration of existing root-level local files.
+
 | Variable | Required | Default | Purpose |
 |---|---:|---|---|
 | `EMAIL_USERNAME` | Yes | — | Gmail address |
 | `EMAIL_APP_PASSWORD` | Yes | — | Google app password |
 | `NEXTIVA_EMAIL_SUBJECT` | Yes | — | Exact decoded subject |
 | `NEXTIVA_AGENT_LOOKUP_FILE` | Yes | — | Role-aware destination lookup CSV |
-| `NEXTIVA_HOLIDAY_OVERRIDES_FILE` | No | `closure_dates.csv` | Local `date,name,status` closure/open overrides |
+| `NEXTIVA_HOLIDAY_OVERRIDES_FILE` | No | `config/closure_dates.csv` | Local `date,name,status` closure/open overrides |
 | `NEXTIVA_HOLIDAY_CACHE_FILE` | No | beside raw CSV | Validated local copy of OPM's iCalendar feed |
 | `NEXTIVA_HOLIDAY_STATUS_FILE` | No | beside raw CSV | Local retry and one-alert status for calendar refreshes |
 | `NEXTIVA_OPM_CALENDAR_URL` | No | OPM official feed | HTTPS OPM iCalendar source |
@@ -28,7 +34,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `NEXTIVA_EMAIL_SENDER` | No | `analytics@nextiva.com` | Exact sender address |
 | `NEXTIVA_ALLOWED_HOSTS` | No | `ct.nextiva.com` | Comma-separated exact HTTPS hosts |
 | `NEXTIVA_REPORT_TIMEOUT_SECONDS` | No | `30` | Dynamic-table wait timeout |
-| `NEXTIVA_OUTPUT_FILE` | No | `NextivaCallData.csv` | Destination CSV |
+| `NEXTIVA_OUTPUT_FILE` | No | `data/NextivaCallData.csv` | Destination CSV |
 | `NEXTIVA_STATE_FILE` | No | derived beside CSV | Processed-message JSON |
 | `NEXTIVA_METADATA_FILE` | No | derived beside CSV | SQLite report provenance |
 | `NEXTIVA_ANALYSIS_FILE` | No | derived beside CSV | Duplicate-free analysis CSV |
@@ -37,7 +43,7 @@ local `.env`; do not use a normal Google password and do not commit this file.
 | `NEXTIVA_CERTIFICATION_HUNT_GROUP` | No | `Certification Hunt Group` | Source hunt group for Certification calls |
 | `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM` | No | `2026-08-15T00:00:00-05:00` | Inclusive Central-time simultaneous-ring start |
 | `LOG_LEVEL` | No | `INFO` | Console log level |
-| `LOG_FILE` | No | `app.log` | Debug log location; blank disables it |
+| `LOG_FILE` | No | `data/app.log` | Debug log location; blank disables it |
 
 Run with the environment file:
 
@@ -69,7 +75,7 @@ seven-day historical period. The default output is the printable four-page Lette
 elsewhere.
 
 Use `--send` to email the PDF after it is generated. Normal delivery reads
-`weekly_report_recipients.txt`, which is a versioned file with one address per
+`config/weekly_report_recipients.txt`, which is a versioned file with one address per
 line; blank lines and `#` comments are allowed. Normal recipients are visible in
 the `To` field and `EMAIL_USERNAME` receives a hidden envelope BCC copy. Use
 `--send --test` to deliver only to `EMAIL_USERNAME` before sending to the list.
@@ -152,8 +158,8 @@ for captured reports and retries the analysis on the next nightly run.
 The OPM calendar cache is requested immediately only when it does not cover the
 current calendar year. From December 15 onward, the importer refreshes until the
 cache also covers the following year. A valid cache that already covers those
-dates avoids an unnecessary request. `NextivaCallData.opm-holidays.ics` and
-`NextivaCallData.holiday-refresh.json` are local operational files; do not add
+dates avoids an unnecessary request. `data/NextivaCallData.opm-holidays.ics` and
+`data/NextivaCallData.holiday-refresh.json` are local operational files; do not add
 them to Git. The JSON sidecar records pending analysis and prevents duplicate
 alerts across restarts. One safe diagnostic email is sent to `EMAIL_USERNAME`
 for a continuous refresh outage; a later successful refresh resets that alert.
@@ -177,7 +183,7 @@ The CSV header is exactly:
 Name,Time of Call,Duration,Direction,Answered,From,To
 ```
 
-`NextivaCallData.csv` is the append-only raw source. A separate analysis CSV is
+`data/NextivaCallData.csv` is the append-only raw source. A separate analysis CSV is
 rebuilt with an atomic replacement; it preserves first-seen order and omits exact
 whitespace-normalized duplicate rows already present in raw data. Its header is
 the seven raw columns plus `call_timestamp_ct`, `from_number_normalized`,
@@ -210,7 +216,7 @@ repeat report sent in a different email is associated with its original report b
 does not add rows. Missing or malformed labelled periods, reversed periods, and
 overlap with an earlier period log warnings while retaining valid calls. Back up
 the metadata database along with the raw CSV; if it is corrupt, restore it before
-retrying rather than deleting the audit trail. `NextivaCallData.metadata.sqlite3`
+retrying rather than deleting the audit trail. `data/NextivaCallData.metadata.sqlite3`
 is tracked in Git. A successful import can update it, so review and commit an
 intentional change with the related import work instead of deleting the file to
 make the working tree clean.
@@ -218,7 +224,7 @@ make the working tree clean.
 ## Candidate-call reconstruction
 
 Whenever the analysis CSV is rebuilt, the importer atomically writes a candidate
-CSV named `NextivaCallData.candidate-calls.csv` by default. It groups segments by
+CSV named `data/NextivaCallData.candidate-calls.csv` by default. It groups segments by
 `Name`, Central timestamp, and normalized `From`. Any missing grouping value
 makes that segment a standalone `Unknown` candidate, which guarantees one and
 only one candidate contains each duplicate-free segment.

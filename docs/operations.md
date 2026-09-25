@@ -5,10 +5,40 @@ You do not need to edit Python code.
 
 ## Before you begin
 
-Keep these local files together and backed up: raw `NextivaCallData.csv`,
-`NextivaCallData.metadata.sqlite3`, the analysis and candidate CSVs, your agent
-lookup CSV, and `closure_dates.csv`. The raw CSV and metadata database are the
+Keep these local files together and backed up: raw `data/NextivaCallData.csv`,
+`data/NextivaCallData.metadata.sqlite3`, the analysis and candidate CSVs, and your
+agent lookup CSV. The raw CSV and metadata database are the
 evidence trail; do not delete them to fix an error.
+
+## Project-file layout and one-time migration
+
+Tracked manager settings live in `config/`: `closure_dates.csv` and
+`weekly_report_recipients.txt`. Operational files live in `data/`. Git ignores
+the operational contents of `data/` except
+`data/NextivaCallData.metadata.sqlite3`, which is intentionally tracked as the
+import-audit history. Reports remain local in `reports/`, and `.env` remains a
+local secret.
+
+Existing root-level operational files are not moved automatically. After making
+a backup, manually move only the files you have and want to keep. For a standard
+installation, the safe target names are:
+
+```text
+agent_lookup.csv                         -> data/agent_lookup.csv
+NextivaCallData.csv                      -> data/NextivaCallData.csv
+NextivaCallData.state.json               -> data/NextivaCallData.state.json
+NextivaCallData.analysis.csv             -> data/NextivaCallData.analysis.csv
+NextivaCallData.candidate-calls.csv      -> data/NextivaCallData.candidate-calls.csv
+NextivaCallData.opm-holidays.ics         -> data/NextivaCallData.opm-holidays.ics
+NextivaCallData.holiday-refresh.json     -> data/NextivaCallData.holiday-refresh.json
+app.log                                  -> data/app.log
+```
+
+Then update `.env` to use `data/agent_lookup.csv`,
+`data/NextivaCallData.csv`, and `config/closure_dates.csv` (the example file
+already uses these paths). Do not move, delete, or recreate the metadata
+database as part of this local-file migration; the repository supplies its
+tracked audit database at the new `data/` path.
 
 The report uses Central Time. **PRELIMINARY** means neither explicit metadata
 nor inferred candidate-date coverage spans a full selected week. A labelled range
@@ -51,8 +81,9 @@ until the cache covers the following year too. If a daily import cannot refresh
 the calendar, it still saves raw calls, metadata, and processed-email state, then
 marks analysis pending for the next nightly retry. One safe alert email goes to
 `EMAIL_USERNAME` for an uninterrupted outage, and a successful refresh resets it.
-Keep the local `.opm-holidays.ics` cache and `.holiday-refresh.json` sidecar with
-the raw CSV, but do not commit either. A weekly PDF still needs a usable calendar.
+Keep the local `data/NextivaCallData.opm-holidays.ics` cache and
+`data/NextivaCallData.holiday-refresh.json` sidecar with the raw CSV, but do not
+commit either. A weekly PDF still needs a usable calendar.
 
 To email the completed PDF, run:
 
@@ -62,7 +93,7 @@ uv run --env-file .env nextiva_calls weekly-report --send
 
 Before the first live send, use `uv run --env-file .env nextiva_calls weekly-report --send --test`.
 It delivers only to `EMAIL_USERNAME`. Normal recipients are maintained in the
-versioned `weekly_report_recipients.txt` file, one address per line; blank lines
+versioned `config/weekly_report_recipients.txt` file, one address per line; blank lines
 and `#` comments are allowed. Keep `.env` private because it contains the Gmail
 app password.
 
@@ -71,7 +102,7 @@ app password.
 Create a task whose Program/script runs `uv` with arguments
 `run --env-file .env nextiva_calls weekly-report --send`. Set **Start in** to
 the project directory (the folder containing `.env` and
-`weekly_report_recipients.txt`). This makes the relative file paths reliable.
+`config/weekly_report_recipients.txt`). This makes the relative file paths reliable.
 Do not place `.env` in a shared folder or commit it to Git.
 
 ## What the PDF means
@@ -114,7 +145,7 @@ at PDF-generation time is authoritative.
 
 ### Update closures
 
-Edit the versioned `closure_dates.csv` (or the file named by
+Edit the versioned `config/closure_dates.csv` (or the file named by
 `NEXTIVA_HOLIDAY_OVERRIDES_FILE`) with exactly these columns:
 
 ```csv

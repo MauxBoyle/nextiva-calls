@@ -17,22 +17,25 @@ def test_config_defaults_and_derived_state_file():
     config = Config.from_env(BASE_ENV)
     assert config.imap_server == "imap.gmail.com"
     assert config.email_sender == "analytics@nextiva.com"
-    assert config.output_file == Path("NextivaCallData.csv")
-    assert config.state_file == Path("NextivaCallData.state.json")
-    assert config.metadata_file == Path("NextivaCallData.metadata.sqlite3")
-    assert config.analysis_file == Path("NextivaCallData.analysis.csv")
-    assert config.candidate_calls_file == Path("NextivaCallData.candidate-calls.csv")
-    assert config.holiday_status_file == Path("NextivaCallData.holiday-refresh.json")
+    assert config.output_file == Path("data/NextivaCallData.csv")
+    assert config.state_file == Path("data/NextivaCallData.state.json")
+    assert config.metadata_file == Path("data/NextivaCallData.metadata.sqlite3")
+    assert config.analysis_file == Path("data/NextivaCallData.analysis.csv")
+    assert config.candidate_calls_file == Path("data/NextivaCallData.candidate-calls.csv")
+    assert config.holiday_cache_file == Path("data/NextivaCallData.opm-holidays.ics")
+    assert config.holiday_status_file == Path("data/NextivaCallData.holiday-refresh.json")
     assert config.membership_hunt_group == "Membership"
     assert config.certification_hunt_group == "Certification Hunt Group"
     assert config.membership_simultaneous_from == "2026-08-15T00:00:00-05:00"
     assert config.agent_lookup_file == Path("agent_lookup.csv")
-    assert config.closure_dates_file == Path("closure_dates.csv")
+    assert config.closure_dates_file == Path("config/closure_dates.csv")
     assert config.allowed_hosts == frozenset({"ct.nextiva.com"})
     assert config.report_timeout_seconds == 30
 
 
-def test_config_custom_values():
+def test_config_custom_values(tmp_path):
+    closures = tmp_path / "closures.csv"
+    closures.write_text("date,name,status\n2026-12-25,Winter closure,closed\n")
     config = Config.from_env(
         BASE_ENV
         | {
@@ -44,24 +47,27 @@ def test_config_custom_values():
             "NEXTIVA_ANALYSIS_FILE": "analysis/custom.csv",
             "NEXTIVA_CANDIDATE_CALLS_FILE": "candidates/custom.csv",
             "NEXTIVA_HOLIDAY_STATUS_FILE": "status/holiday.json",
+            "NEXTIVA_HOLIDAY_CACHE_FILE": "cache/holidays.ics",
             "NEXTIVA_MEMBERSHIP_HUNT_GROUP": "Reception",
             "NEXTIVA_CERTIFICATION_HUNT_GROUP": "CertHuntGroup",
             "NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM": "2026-08-16T00:00:00-05:00",
             "NEXTIVA_AGENT_LOOKUP_FILE": "lookups/agents.csv",
-            "NEXTIVA_CLOSURE_DATES_FILE": "closure_dates.csv",
+            "NEXTIVA_CLOSURE_DATES_FILE": str(closures),
             "NEXTIVA_ALLOWED_HOSTS": " CT.NEXTIVA.COM, reports.example.test. ",
             "NEXTIVA_REPORT_TIMEOUT_SECONDS": "4.5",
         }
     )
+    assert config.output_file == Path("output/calls.csv")
     assert config.state_file == Path("state/custom.json")
     assert config.metadata_file == Path("metadata/custom.sqlite3")
     assert config.analysis_file == Path("analysis/custom.csv")
     assert config.candidate_calls_file == Path("candidates/custom.csv")
     assert config.holiday_status_file == Path("status/holiday.json")
+    assert config.holiday_cache_file == Path("cache/holidays.ics")
     assert config.membership_hunt_group == "Reception"
     assert config.certification_hunt_group == "CertHuntGroup"
     assert config.agent_lookup_file == Path("lookups/agents.csv")
-    assert config.closure_dates_file == Path("closure_dates.csv")
+    assert config.closure_dates_file == closures
     assert config.allowed_hosts == frozenset({"ct.nextiva.com", "reports.example.test"})
     assert config.report_timeout_seconds == 4.5
 

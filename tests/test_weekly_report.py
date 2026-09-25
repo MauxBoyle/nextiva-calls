@@ -82,7 +82,7 @@ def test_weekly_report_uses_dashboard_default_filename(monkeypatch, tmp_path):
         writer.writeheader()
     monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
-    monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", str(Path(__file__).parents[1] / "closure_dates.csv"))
+    monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", str(Path(__file__).parents[1] / "config" / "closure_dates.csv"))
     assert app.main(["weekly-report", "--week-start", "2026-08-17"]) == 0
     assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-17_to_2026-08-23.pdf").exists()
 
@@ -97,7 +97,7 @@ def test_weekly_report_default_uses_complete_days_ending_yesterday(monkeypatch, 
         writer.writeheader()
     monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
-    monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", str(Path(__file__).parents[1] / "closure_dates.csv"))
+    monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", str(Path(__file__).parents[1] / "config" / "closure_dates.csv"))
     monkeypatch.setattr("nextiva_calls.weekly_metrics.week_for", lambda: Week(date(2026, 8, 13)))
 
     assert app.main(["weekly-report"]) == 0
