@@ -42,6 +42,59 @@ class ReportResult:
 
 _PERIOD_LABEL = re.compile(r"(?:date\s*range|report\s*period)\s*[:\-]?\s*", re.I)
 _PERIOD_SEPARATOR = re.compile(r"\s*(?:\bto\b|\bthrough\b|\s+-\s+|\s*[–—]\s*)\s*", re.I)
+_NEXTIVA_RANGE_VALUE = r"\d{1,2}/\d{1,2}/\d{2,4}\s+\d{1,2}:\d{2}\s+[AP]M"
+_LEADING_NEXTIVA_RANGE = re.compile(
+    rf"^\s*(?P<start>{_NEXTIVA_RANGE_VALUE})\s*—\s*(?P<end>{_NEXTIVA_RANGE_VALUE})\s*$",
+    re.I,
+)
+_LEADING_NEXTIVA_RANGE_CANDIDATE = re.compile(
+    r"\d{1,2}/\d{1,2}/\d{2,4}.*—", re.I
+)
+
+
+def _central_midnight(value: str) -> datetime:
+    """Parse a displayed date and return its Central-time midnight."""
+    parsed = parse_datetime(value, fuzzy=False)
+    return parsed.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME)
+
+
+def _parse_leading_nextiva_range(
+    page_text: str,
+) -> tuple[datetime | None, datetime | None, tuple[str, ...]] | None:
+    """Parse Nextiva's unlabelled whole-day range before the call-table header."""
+    lines = page_text.splitlines()
+    try:
+        name_header = next(
+            index for index, line in enumerate(lines) if clean_text(line).casefold() == "name"
+        )
+    except StopIteration:
+        return None
+    for line in lines[:name_header]:
+        match = _LEADING_NEXTIVA_RANGE.fullmatch(line)
+        if match is None:
+            if _LEADING_NEXTIVA_RANGE_CANDIDATE.search(line):
+                return None, None, ("Report period is malformed",)
+            continue
+        try:
+            displayed_start = parse_datetime(match["start"], fuzzy=False)
+            displayed_end = parse_datetime(match["end"], fuzzy=False)
+        except (ParserError, OverflowError, ValueError):
+            return None, None, ("Report period is malformed",)
+        if (displayed_start.hour, displayed_start.minute) != (0, 0) or (
+            displayed_end.hour,
+            displayed_end.minute,
+        ) != (23, 59):
+            return None, None, ("Report period is malformed",)
+        start = displayed_start.replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME
+        )
+        end = displayed_end.replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME
+        )
+        if end < start:
+            return start, end, ("Report period ends before it starts",)
+        return start, end, ()
+    return None
 
 
 def parse_report_period(
@@ -54,6 +107,9 @@ def parse_report_period(
     """
     label = _PERIOD_LABEL.search(page_text)
     if label is None:
+        leading_range = _parse_leading_nextiva_range(page_text)
+        if leading_range is not None:
+            return leading_range
         return None, None, ("Report period was not found in a labelled header",)
     # A rendered page may place the label and value in separate elements, which
     # Selenium exposes as separate lines of text.
@@ -62,12 +118,8 @@ def parse_report_period(
     if len(parts) != 2 or not all(parts):
         return None, None, ("Report period is malformed",)
     try:
-        start = parse_datetime(parts[0], fuzzy=False).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME
-        )
-        end = parse_datetime(parts[1], fuzzy=False).replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=CENTRAL_TIME
-        )
+        start = _central_midnight(parts[0])
+        end = _central_midnight(parts[1])
     except (ParserError, OverflowError, ValueError):
         return None, None, ("Report period is malformed",)
     if end < start:

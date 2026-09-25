@@ -302,6 +302,46 @@ def test_parse_period_allows_a_value_on_the_next_rendered_line():
     assert warnings == ()
 
 
+def test_parse_leading_nextiva_daily_range_uses_inclusive_central_dates():
+    start, end, warnings = parse_report_period(
+        """Missed Call Daily Report
+9/23/26 12:00 AM — 9/24/26 11:59 PM
+Name
+Time of Call"""
+    )
+
+    assert start.isoformat() == "2026-09-23T00:00:00-05:00"
+    assert end.isoformat() == "2026-09-24T00:00:00-05:00"
+    assert warnings == ()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_warning"),
+    [
+        (
+            "9/24/26 12:00 AM — 9/23/26 11:59 PM",
+            "ends before",
+        ),
+        (
+            "9/23/26 12:00 AM — 9/24/26 5:00 PM",
+            "malformed",
+        ),
+    ],
+)
+def test_parse_leading_nextiva_daily_range_warns_when_unreliable(value, expected_warning):
+    _, _, warnings = parse_report_period(f"Missed Call Daily Report\n{value}\nName")
+
+    assert expected_warning in warnings[0]
+
+
+def test_parse_leading_range_ignores_ranges_after_the_name_header():
+    _, _, warnings = parse_report_period(
+        "Missed Call Daily Report\nName\n9/23/26 12:00 AM — 9/24/26 11:59 PM"
+    )
+
+    assert warnings == ("Report period was not found in a labelled header",)
+
+
 @pytest.mark.parametrize(
     "text, expected",
     [
