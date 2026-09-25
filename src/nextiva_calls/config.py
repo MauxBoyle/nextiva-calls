@@ -25,18 +25,18 @@ class Config:
     email_subject: str
     imap_server: str = "imap.gmail.com"
     email_sender: str = "analytics@nextiva.com"
-    output_file: Path = Path("NextivaCallData.csv")
+    output_file: Path = Path("data/NextivaCallData.csv")
     allowed_hosts: frozenset[str] = frozenset({"ct.nextiva.com"})
     report_timeout_seconds: float = 30
-    state_file: Path = Path("NextivaCallData.state.json")
+    state_file: Path = Path("data/NextivaCallData.state.json")
     metadata_file: Path | None = None
     analysis_file: Path | None = None
     candidate_calls_file: Path | None = None
     agent_lookup_file: Path | None = None
     # Kept as an attribute name for integrations from the earlier release; it
     # now points at date,name,status holiday overrides.
-    closure_dates_file: Path = Path("closure_dates.csv")
-    holiday_cache_file: Path = Path("opm_holidays.ics")
+    closure_dates_file: Path = Path("config/closure_dates.csv")
+    holiday_cache_file: Path = Path("data/NextivaCallData.opm-holidays.ics")
     holiday_status_file: Path | None = None
     opm_calendar_url: str = "https://www.opm.gov/policy-data-oversight/pay-leave/federal-holidays/holidays.ics"
     membership_hunt_group: str = "Membership"
@@ -84,7 +84,7 @@ class Config:
                 "NEXTIVA_REPORT_TIMEOUT_SECONDS must be greater than zero"
             )
 
-        output = Path(values.get("NEXTIVA_OUTPUT_FILE", "NextivaCallData.csv"))
+        output = Path(values.get("NEXTIVA_OUTPUT_FILE", "data/NextivaCallData.csv"))
         if output.name == "":
             raise ConfigError("NEXTIVA_OUTPUT_FILE must name a file")
         imap_server = values.get("EMAIL_IMAP_SERVER", "imap.gmail.com").strip()
@@ -143,7 +143,7 @@ class Config:
             raise ConfigError("NEXTIVA_AGENT_LOOKUP_FILE must name a file")
         closure_value = values.get(
             "NEXTIVA_HOLIDAY_OVERRIDES_FILE",
-            values.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv"),
+            values.get("NEXTIVA_CLOSURE_DATES_FILE", "config/closure_dates.csv"),
         ).strip()
         closure_dates = Path(closure_value)
         if closure_dates.name == "":

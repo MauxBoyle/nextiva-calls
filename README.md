@@ -69,7 +69,7 @@ historical period. By default, the printable four-page Letter PDF is written as
 different location.
 
 `--send` emails the PDF only after it has been created successfully. Normal sends
-use the versioned `weekly_report_recipients.txt` file; recipients are visible to
+use the versioned `config/weekly_report_recipients.txt` file; recipients are visible to
 one another and `EMAIL_USERNAME` receives an envelope-only BCC copy. The file
 has one email address per line and supports blank lines and `#` comments. With
 `--send --test`, delivery goes only to `EMAIL_USERNAME`. Keep `.env` private:
@@ -94,7 +94,7 @@ cp .env.example .env
   the raw CSV by default). If refresh fails, only a cache that covers the report
   period can be used; otherwise the run stops clearly rather than treating days
   as open. OPM's observed dates are used as published.
-- Organization changes live in `NEXTIVA_HOLIDAY_OVERRIDES_FILE=closure_dates.csv`
+- Organization changes live in `NEXTIVA_HOLIDAY_OVERRIDES_FILE=config/closure_dates.csv`
   (the older `NEXTIVA_CLOSURE_DATES_FILE` name remains an alias). It must be a
   unique `date,name,status` CSV. `closed` adds or replaces a closure and `open`
   explicitly reopens an OPM closure.
@@ -102,24 +102,30 @@ cp .env.example .env
   `NEXTIVA_EMAIL_SENDER=analytics@nextiva.com`.
 - Security and timing defaults: `NEXTIVA_ALLOWED_HOSTS=ct.nextiva.com` and
   `NEXTIVA_REPORT_TIMEOUT_SECONDS=30`. Multiple allowed hosts are comma-separated.
-- Output defaults: `NEXTIVA_OUTPUT_FILE=NextivaCallData.csv`. If
+- Output defaults: `NEXTIVA_OUTPUT_FILE=data/NextivaCallData.csv`. If
   `NEXTIVA_STATE_FILE` is omitted, `NextivaCallData.state.json` is created beside
   that CSV. `NEXTIVA_METADATA_FILE` and `NEXTIVA_ANALYSIS_FILE` similarly default
-  to `NextivaCallData.metadata.sqlite3` and `NextivaCallData.analysis.csv`.
+  to `data/NextivaCallData.metadata.sqlite3` and `data/NextivaCallData.analysis.csv`.
   The metadata database is a tracked import-audit file: an intentional import can
   update it, so include its change in the related Git commit rather than deleting
   it to make the working tree clean.
-  `NEXTIVA_CANDIDATE_CALLS_FILE` defaults to
-  `NextivaCallData.candidate-calls.csv` beside the raw export.
+`NEXTIVA_CANDIDATE_CALLS_FILE` defaults to
+  `data/NextivaCallData.candidate-calls.csv` beside the raw export.
 - Routing defaults: `NEXTIVA_MEMBERSHIP_HUNT_GROUP=Membership`,
   `NEXTIVA_CERTIFICATION_HUNT_GROUP=Certification Hunt Group`, and
   `NEXTIVA_MEMBERSHIP_SIMULTANEOUS_FROM=2026-08-15T00:00:00-05:00`. The latter
   is midnight Central Time on August 15, 2026; it is inclusive and must include
   a timezone offset. Change these two settings if the Membership routing policy
   or its effective date changes.
-- `LOG_LEVEL` defaults to `INFO`; `LOG_FILE` defaults to `app.log`.
+- `LOG_LEVEL` defaults to `INFO`; `LOG_FILE` defaults to `data/app.log`.
 
 The application does not load `.env` automatically. Use `uv run --env-file .env` to load the development settings explicitly.
+
+Project settings are tracked in `config/`; local operational files default to
+`data/`. The only tracked `data/` file is
+`data/NextivaCallData.metadata.sqlite3`, retained as import-audit history. For
+safe, manual migration of older root-level local files, see the
+[manager operating runbook](docs/operations.md#project-file-layout-and-one-time-migration).
 
 ## Output and repeat runs
 
@@ -276,7 +282,7 @@ speed-of-answer, or outbound claims.
 - **Corrupt state file:** inspect or restore it rather than deleting it blindly.
   The metadata database and raw CSV protect report and row retries, but state
   controls which emails are fetched again.
-- **Metadata database problem:** restore `NextivaCallData.metadata.sqlite3` from a
+- **Metadata database problem:** restore `data/NextivaCallData.metadata.sqlite3` from a
   backup if possible. Do not delete it casually: it is the report-to-call audit
   trail. If it must be rebuilt, keep the raw CSV and re-import only after reviewing
   the resulting provenance and analysis CSV.

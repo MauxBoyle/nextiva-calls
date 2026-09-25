@@ -21,7 +21,7 @@ def configure_logging(environ: Mapping[str, str] | None = None) -> None:
     """Configure safe console logging and optional local file logging."""
     values = os.environ if environ is None else environ
     log_level = values.get("LOG_LEVEL", "INFO")
-    log_file = values.get("LOG_FILE", "app.log")
+    log_file = values.get("LOG_FILE", "data/app.log")
     logger.remove()
     logger.add(sys.stderr, level=log_level)
     if log_file:
@@ -57,7 +57,7 @@ def _run_weekly_report(arguments: list[str]) -> int:
     if parsed.test and not parsed.send:
         parser.error("--test requires --send")
     week = parse_week_start(parsed.week_start) if parsed.week_start else week_for()
-    raw = Path(os.environ.get("NEXTIVA_OUTPUT_FILE", "NextivaCallData.csv"))
+    raw = Path(os.environ.get("NEXTIVA_OUTPUT_FILE", "data/NextivaCallData.csv"))
     candidates = Path(
         os.environ.get("NEXTIVA_CANDIDATE_CALLS_FILE", "")
         or raw.with_suffix(".candidate-calls.csv")
@@ -76,7 +76,7 @@ def _run_weekly_report(arguments: list[str]) -> int:
     overrides_file = Path(
         os.environ.get(
             "NEXTIVA_HOLIDAY_OVERRIDES_FILE",
-            os.environ.get("NEXTIVA_CLOSURE_DATES_FILE", "closure_dates.csv"),
+            os.environ.get("NEXTIVA_CLOSURE_DATES_FILE", "config/closure_dates.csv"),
         ).strip()
     )
     membership_hunt_group = os.environ.get(

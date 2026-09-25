@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -39,6 +40,12 @@ def test_load_recipients_allows_comments_and_blank_lines(tmp_path):
     assert load_recipients(recipients) == (
         "charmaine@example.test",
         "todd@example.test",
+    )
+
+
+def test_load_recipients_uses_config_directory_by_default():
+    assert load_recipients.__defaults__ == (
+        Path("config/weekly_report_recipients.txt"),
     )
 
 
