@@ -14,6 +14,7 @@ from nextiva_calls.importer import run_import
 from nextiva_calls.mailbox import MailboxError
 from nextiva_calls.segments import AgentLookupError, load_agent_lookup
 from nextiva_calls.storage import StorageError, save_analysis, save_candidate_calls
+from nextiva_calls.weekly_email import WeeklyReportEmailError, send_weekly_report
 
 
 def configure_logging(environ: Mapping[str, str] | None = None) -> None:
@@ -31,6 +32,12 @@ def _weekly_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nextiva_calls weekly-report")
     parser.add_argument("--week-start", metavar="YYYY-MM-DD")
     parser.add_argument("--output", type=Path, metavar="PATH")
+    parser.add_argument(
+        "--send", action="store_true", help="email the generated PDF through Gmail"
+    )
+    parser.add_argument(
+        "--test", action="store_true", help="send only to EMAIL_USERNAME (requires --send)"
+    )
     return parser
 
 
@@ -45,7 +52,10 @@ def _run_weekly_report(arguments: list[str]) -> int:
     )
     from nextiva_calls.weekly_report import render_weekly_report
 
-    parsed = _weekly_parser().parse_args(arguments)
+    parser = _weekly_parser()
+    parsed = parser.parse_args(arguments)
+    if parsed.test and not parsed.send:
+        parser.error("--test requires --send")
     week = parse_week_start(parsed.week_start) if parsed.week_start else week_for()
     raw = Path(os.environ.get("NEXTIVA_OUTPUT_FILE", "NextivaCallData.csv"))
     candidates = Path(
@@ -138,9 +148,17 @@ def _run_weekly_report(arguments: list[str]) -> int:
             ),
         )
         rows = load_candidates(candidates)
+    current = summarize_week(
+        rows, week, lookup, metadata, membership_hunt_group, "combined", holiday_calendar,
+        certification_hunt_group=configured_certification_hunt_group,
+    )
+    prior = summarize_week(
+        rows, week.prior, lookup, metadata, membership_hunt_group, "combined", holiday_calendar,
+        certification_hunt_group=configured_certification_hunt_group,
+    )
     render_weekly_report(
-        summarize_week(rows, week, lookup, metadata, membership_hunt_group, "combined", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
-        summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "combined", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
+        current,
+        prior,
         output,
         membership=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Membership", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
         certification=summarize_week(rows, week, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
@@ -148,6 +166,17 @@ def _run_weekly_report(arguments: list[str]) -> int:
         prior_certification=summarize_week(rows, week.prior, lookup, metadata, membership_hunt_group, "Certification", holiday_calendar, certification_hunt_group=configured_certification_hunt_group),
     )
     logger.info("Wrote weekly report to {}", output)
+    if parsed.send:
+        username = os.environ.get("EMAIL_USERNAME", "").strip()
+        password = os.environ.get("EMAIL_APP_PASSWORD", "")
+        if not username or not password:
+            raise ConfigError(
+                "EMAIL_USERNAME and EMAIL_APP_PASSWORD are required to email weekly reports"
+            )
+        send_weekly_report(
+            output, week, current.calls, username, password, test=parsed.test
+        )
+        logger.info("Sent weekly report email")
     return 0
 
 
@@ -166,8 +195,12 @@ def main(argv: list[str] | None = None) -> int:
         logger.error("Mailbox connection or authentication failed")
     except StorageError as error:
         logger.error("Local data error: {}", error)
+    except WeeklyReportEmailError as error:
+        logger.error("Weekly report email failed: {}", error)
     except (AgentLookupError, ValueError) as error:
         logger.error("Weekly report configuration error: {}", error)
+    except OSError:
+        logger.error("Weekly report file operation failed")
     except SystemExit as error:
         # argparse has already printed a short, useful usage message.
         return int(error.code) if isinstance(error.code, int) else 1

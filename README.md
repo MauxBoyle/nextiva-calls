@@ -58,12 +58,22 @@ seven complete Central-time days ending yesterday:
 ```bash
 uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
+uv run --env-file .env nextiva_calls weekly-report --send
+# Safe delivery check: sends only to EMAIL_USERNAME.
+uv run --env-file .env nextiva_calls weekly-report --send --test
 ```
 
 `--week-start` accepts any ISO date (`YYYY-MM-DD`) as the start of a seven-day
 historical period. By default, the printable four-page Letter PDF is written as
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; use `--output PATH` to choose a
 different location.
+
+`--send` emails the PDF only after it has been created successfully. Normal sends
+use the versioned `weekly_report_recipients.txt` file; recipients are visible to
+one another and `EMAIL_USERNAME` receives an envelope-only BCC copy. The file
+has one email address per line and supports blank lines and `#` comments. With
+`--send --test`, delivery goes only to `EMAIL_USERNAME`. Keep `.env` private:
+it contains the Gmail app password.
 
 ## Environment Variables
 

@@ -54,6 +54,26 @@ marks analysis pending for the next nightly retry. One safe alert email goes to
 Keep the local `.opm-holidays.ics` cache and `.holiday-refresh.json` sidecar with
 the raw CSV, but do not commit either. A weekly PDF still needs a usable calendar.
 
+To email the completed PDF, run:
+
+```bash
+uv run --env-file .env nextiva_calls weekly-report --send
+```
+
+Before the first live send, use `uv run --env-file .env nextiva_calls weekly-report --send --test`.
+It delivers only to `EMAIL_USERNAME`. Normal recipients are maintained in the
+versioned `weekly_report_recipients.txt` file, one address per line; blank lines
+and `#` comments are allowed. Keep `.env` private because it contains the Gmail
+app password.
+
+## Windows Task Scheduler
+
+Create a task whose Program/script runs `uv` with arguments
+`run --env-file .env nextiva_calls weekly-report --send`. Set **Start in** to
+the project directory (the folder containing `.env` and
+`weekly_report_recipients.txt`). This makes the relative file paths reliable.
+Do not place `.env` in a shared folder or commit it to Git.
+
 ## What the PDF means
 
 The dashboard scope is the combined union of calls to the configured Membership

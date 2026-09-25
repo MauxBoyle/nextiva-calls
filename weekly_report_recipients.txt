@@ -1,0 +1,5 @@
+# Weekly Membership + Certification dashboard recipients.
+# One email address per line. Blank lines and lines beginning with # are ignored.
+charmaine@aisc.org
+todd@aisc.org
+lisa@aisc.org
