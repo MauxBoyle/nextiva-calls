@@ -11,9 +11,11 @@ lookup CSV, and `closure_dates.csv`. The raw CSV and metadata database are the
 evidence trail; do not delete them to fix an error.
 
 The report uses Central Time. **PRELIMINARY** means neither explicit metadata
-nor inferred candidate-date coverage spans a full selected week. When Nextiva
-omits a labelled range, “Data through” explicitly says it was inferred from call
-dates. Treat a preliminary report as a snapshot, not a completed trend.
+nor inferred candidate-date coverage spans a full selected week. A labelled range
+or Nextiva's leading displayed daily range (for example, `9/23/26 12:00 AM —
+9/24/26 11:59 PM`) confirms coverage, even for a report with no calls. When no
+reliable range is available, “Data through” explicitly says coverage was inferred
+from call dates. Treat a preliminary report as a snapshot, not a completed trend.
 
 ## Daily import checklist
 

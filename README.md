@@ -162,9 +162,11 @@ and any organization-specific overrides.
 The metadata SQLite database records report periods, import time, warnings,
 source-message IDs, and the relationship between every report and its call
 segments. A repeated report delivered under another message ID is recorded as an
-additional source but adds no raw or analysis rows. Missing, malformed, reversed,
-or overlapping labelled report periods produce a warning without discarding valid
-call rows.
+additional source but adds no raw or analysis rows. A labelled `Date Range` or
+`Report Period`, and Nextiva's standalone leading `9/23/26 12:00 AM — 9/24/26
+11:59 PM` range before the `Name` table header, can confirm report coverage.
+Missing, malformed, reversed, or overlapping ranges produce a warning without
+discarding valid call rows.
 
 The command returns exit status `0` when all required reports succeed. It returns
 `1` for unsafe/missing configuration, authentication, browser, parsing, CSV, or
@@ -237,10 +239,11 @@ unknown attribution`, `Answered / unattributed`, and `Ambiguous` outcomes.
 a dash.
 
 A week is marked **PRELIMINARY** unless explicit report metadata or inferred
-candidate-date coverage continuously covers the entire week. When Nextiva omits
-a labelled period, the earliest and latest valid call dates provide inferred
-coverage and “Data through” says so. Missing, invalid, or gapped coverage keeps
-the label visible.
+candidate-date coverage continuously covers the entire week. A labelled range or
+Nextiva's leading displayed daily range can provide that metadata, including for
+a no-call day. When no reliable range is available, the earliest and latest valid
+call dates provide inferred coverage and “Data through” says so. Missing, invalid,
+or gapped coverage keeps the label visible.
 
 The automated-insights page compares only the combined-scope voicemail rate and
 confirmed-human-answer rate. It calls a weekly rate change significant only when

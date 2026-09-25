@@ -1,10 +1,10 @@
 from dataclasses import replace
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 
 from nextiva_calls.segments import AgentLookup, Destination
-from nextiva_calls.storage import StorageError
+from nextiva_calls.storage import MetadataStore, StorageError
 from nextiva_calls.weekly_metrics import (
     CONNECTED_CALL_ATTRIBUTION_CATEGORIES,
     OTHER,
@@ -119,6 +119,30 @@ def test_candidate_coverage_is_preliminary_when_an_interior_date_is_missing(tmp_
 
     assert summary.preliminary
     assert not summary.coverage_inferred
+
+
+def test_daily_metadata_including_a_zero_call_report_confirms_week_coverage(tmp_path):
+    week = Week(date(2026, 8, 17))
+    metadata_path = tmp_path / "calls.metadata.sqlite3"
+    store = MetadataStore(metadata_path)
+    store.initialize()
+    for offset in range(7):
+        day = date(2026, 8, 17 + offset)
+        boundary = datetime.combine(day, datetime.min.time(), tzinfo=week.start_at.tzinfo)
+        store.store_report(
+            message_id=f"daily-{offset}",
+            fingerprint=f"daily-{offset}",
+            period_start=boundary,
+            period_end=boundary,
+            warnings=(),
+            records=[],
+        )
+
+    summary = summarize_week([], week, lookup(), metadata_path)
+
+    assert not summary.preliminary
+    assert not summary.coverage_inferred
+    assert summary.data_through == week.end_at
 
 
 def insight_summary(tmp_path, *, calls, voicemail, confirmed, preliminary=False):
