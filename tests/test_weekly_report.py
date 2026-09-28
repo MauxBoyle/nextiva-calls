@@ -87,7 +87,7 @@ def test_weekly_report_uses_dashboard_default_filename(monkeypatch, tmp_path):
     assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-17_to_2026-08-23.pdf").exists()
 
 
-def test_weekly_report_default_uses_complete_days_ending_yesterday(monkeypatch, tmp_path):
+def test_weekly_report_default_uses_newest_available_candidate_date(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     raw = tmp_path / "calls.csv"
     lookup = tmp_path / "agents.csv"
@@ -95,13 +95,59 @@ def test_weekly_report_default_uses_complete_days_ending_yesterday(monkeypatch, 
     with raw.with_suffix(".candidate-calls.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
         writer.writeheader()
+        values = {column: "" for column in CANDIDATE_COLUMNS}
+        values.update(
+            {
+                "call_timestamp_ct": "2026-08-23T10:00:00-05:00",
+                "hunt_group": "Membership",
+                "offered_agent_destinations": "15550101",
+                "outcome": "Voicemail",
+            }
+        )
+        writer.writerow(values)
     monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
     monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
     monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", str(Path(__file__).parents[1] / "config" / "closure_dates.csv"))
-    monkeypatch.setattr("nextiva_calls.weekly_metrics.week_for", lambda: Week(date(2026, 8, 13)))
-
     assert app.main(["weekly-report"]) == 0
-    assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-13_to_2026-08-19.pdf").exists()
+    assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-17_to_2026-08-23.pdf").exists()
+
+
+def test_weekly_report_week_end_uses_historical_period_and_filename(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    raw = tmp_path / "calls.csv"
+    candidates = raw.with_suffix(".candidate-calls.csv")
+    lookup = tmp_path / "agents.csv"
+    lookup.write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
+    with candidates.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
+        writer.writeheader()
+        values = {column: "" for column in CANDIDATE_COLUMNS}
+        values.update({"call_timestamp_ct": "2026-08-23T10:00:00-05:00", "hunt_group": "Membership", "outcome": "Voicemail"})
+        writer.writerow(values)
+    monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
+    monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
+    monkeypatch.setenv("NEXTIVA_CLOSURE_DATES_FILE", str(Path(__file__).parents[1] / "config" / "closure_dates.csv"))
+
+    assert app.main(["weekly-report", "--week-end", "2026-08-23"]) == 0
+    assert (tmp_path / "reports" / "Nextiva_Weekly_2026-08-17_to_2026-08-23.pdf").exists()
+
+
+def test_weekly_report_rejects_conflicting_or_out_of_window_end_date(monkeypatch, tmp_path):
+    raw = tmp_path / "calls.csv"
+    candidates = raw.with_suffix(".candidate-calls.csv")
+    lookup = tmp_path / "agents.csv"
+    lookup.write_text("phone_number,display_name,department,destination_type\n15550101,Alex,Membership,agent\n", encoding="utf-8")
+    with candidates.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=CANDIDATE_COLUMNS)
+        writer.writeheader()
+        values = {column: "" for column in CANDIDATE_COLUMNS}
+        values["call_timestamp_ct"] = "2026-08-23T10:00:00-05:00"
+        writer.writerow(values)
+    monkeypatch.setenv("NEXTIVA_OUTPUT_FILE", str(raw))
+    monkeypatch.setenv("NEXTIVA_AGENT_LOOKUP_FILE", str(lookup))
+
+    assert app.main(["weekly-report", "--week-start", "2026-08-17", "--week-end", "2026-08-23"]) == 2
+    assert app.main(["weekly-report", "--week-end", "2026-08-24"]) == 1
 
 
 def test_agent_dashboard_shows_every_lookup_agent_and_recorded_offer_rate(tmp_path):

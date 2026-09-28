@@ -53,18 +53,21 @@ uv run python -m nextiva_calls
 ```
 
 Create a management-shareable Membership + Certification weekly PDF. By default it covers the
-seven complete Central-time days ending yesterday:
+seven-day Central-time period ending on the newest available call-data date:
 
 ```bash
 uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
+uv run --env-file .env nextiva_calls weekly-report --week-end 2026-08-23
 uv run --env-file .env nextiva_calls weekly-report --send
 # Safe delivery check: sends only to EMAIL_USERNAME.
 uv run --env-file .env nextiva_calls weekly-report --send --test
 ```
 
 `--week-start` accepts any ISO date (`YYYY-MM-DD`) as the start of a seven-day
-historical period. By default, the printable four-page Letter PDF is written as
+historical period. `--week-end` accepts an inclusive final date and creates the
+seven-day period ending on that date. Use only one selector: `--week-start` and
+`--week-end` cannot be combined. By default, the printable four-page Letter PDF is written as
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; use `--output PATH` to choose a
 different location.
 

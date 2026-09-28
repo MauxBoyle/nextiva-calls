@@ -10,9 +10,12 @@ from nextiva_calls.weekly_metrics import (
     OTHER,
     Week,
     build_weekly_insights,
+    latest_available_week,
     load_candidates,
+    parse_week_end,
     parse_week_start,
     summarize_week,
+    validate_week_end,
     week_for,
 )
 
@@ -33,6 +36,34 @@ def row(**updates):
 def test_week_helpers():
     assert week_for(date(2026, 8, 20)) == Week(date(2026, 8, 13))
     assert parse_week_start("2026-08-17") == Week(date(2026, 8, 17))
+    assert parse_week_end("2026-08-23") == Week(date(2026, 8, 17))
+    assert parse_week_end("2026-08-23").prior == Week(date(2026, 8, 10))
+
+
+def test_latest_available_week_uses_raw_call_timestamps(tmp_path):
+    raw = tmp_path / "calls.csv"
+    raw.write_text(
+        "Name,Time of Call,Duration,Direction,Answered,From,To\n"
+        "Membership,Aug 23 2026 10:00 AM,60s,Inbound,Yes,15550001,15550101\n",
+        encoding="utf-8",
+    )
+
+    assert latest_available_week(raw, []) == Week(date(2026, 8, 17))
+
+
+def test_candidate_only_data_selects_and_validates_end_date(tmp_path):
+    candidates = [row(call_timestamp_ct="2026-08-23T10:00:00-05:00")]
+    missing_raw = tmp_path / "missing.csv"
+
+    assert latest_available_week(missing_raw, candidates) == Week(date(2026, 8, 17))
+    assert validate_week_end(parse_week_end("2026-08-23"), missing_raw, candidates) == Week(date(2026, 8, 17))
+    with pytest.raises(ValueError, match="available data dates"):
+        validate_week_end(parse_week_end("2026-08-24"), missing_raw, candidates)
+
+
+def test_week_end_requires_iso_date():
+    with pytest.raises(ValueError, match="YYYY-MM-DD"):
+        parse_week_end("August 23, 2026")
 
 
 def test_configured_closure_is_a_holiday_not_business_hours(tmp_path):

@@ -59,18 +59,20 @@ uv run --env-file .env python -m nextiva_calls
 
 ## Weekly manager report
 
-Create a Membership + Certification PDF comparing the seven complete Central-time days ending
-yesterday with the preceding seven days:
+Create a Membership + Certification PDF comparing the seven-day Central-time period ending on
+the newest available call-data date with the preceding seven days:
 
 ```bash
 uv run --env-file .env nextiva_calls weekly-report
 uv run --env-file .env nextiva_calls weekly-report --week-start 2026-08-17
+uv run --env-file .env nextiva_calls weekly-report --week-end 2026-08-23
 uv run --env-file .env nextiva_calls weekly-report --send
 uv run --env-file .env nextiva_calls weekly-report --send --test
 ```
 
 `--week-start` accepts any date in `YYYY-MM-DD` format as the beginning of a
-seven-day historical period. The default output is the printable four-page Letter PDF
+seven-day historical period. `--week-end` accepts an inclusive final date and creates
+the period ending on that date. The two selectors cannot be combined. The default output is the printable four-page Letter PDF
 `reports/Nextiva_Weekly_<start>_to_<end>.pdf`; pass `--output PATH` to write
 elsewhere.
 

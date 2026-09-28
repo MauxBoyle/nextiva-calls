@@ -30,7 +30,15 @@ def configure_logging(environ: Mapping[str, str] | None = None) -> None:
 
 def _weekly_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="nextiva_calls weekly-report")
-    parser.add_argument("--week-start", metavar="YYYY-MM-DD")
+    period = parser.add_mutually_exclusive_group()
+    period.add_argument(
+        "--week-start", metavar="YYYY-MM-DD", help="first date of the seven-day report"
+    )
+    period.add_argument(
+        "--week-end",
+        metavar="YYYY-MM-DD",
+        help="inclusive final date of the seven-day report",
+    )
     parser.add_argument("--output", type=Path, metavar="PATH")
     parser.add_argument(
         "--send", action="store_true", help="email the generated PDF through Gmail"
@@ -45,10 +53,12 @@ def _run_weekly_report(arguments: list[str]) -> int:
     """Generate a weekly PDF without requiring mailbox credentials."""
     from nextiva_calls.reconstruction import MEMBERSHIP_SIMULTANEOUS_FROM
     from nextiva_calls.weekly_metrics import (
+        latest_available_week,
         load_candidates,
+        parse_week_end,
         parse_week_start,
         summarize_week,
-        week_for,
+        validate_week_end,
     )
     from nextiva_calls.weekly_report import render_weekly_report
 
@@ -56,7 +66,6 @@ def _run_weekly_report(arguments: list[str]) -> int:
     parsed = parser.parse_args(arguments)
     if parsed.test and not parsed.send:
         parser.error("--test requires --send")
-    week = parse_week_start(parsed.week_start) if parsed.week_start else week_for()
     raw = Path(os.environ.get("NEXTIVA_OUTPUT_FILE", "data/NextivaCallData.csv"))
     candidates = Path(
         os.environ.get("NEXTIVA_CANDIDATE_CALLS_FILE", "")
@@ -89,9 +98,18 @@ def _run_weekly_report(arguments: list[str]) -> int:
     ).strip()
     if not configured_certification_hunt_group:
         raise ConfigError("NEXTIVA_CERTIFICATION_HUNT_GROUP must not be blank")
-    output = parsed.output or Path("reports") / (
-        f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
-    )
+    # A raw audit CSV is authoritative for choosing the report date.  In the
+    # supported candidate-only mode, load its timestamps before choosing.
+    if raw.exists():
+        rows_for_bounds: list[dict[str, str]] = []
+    else:
+        rows_for_bounds = load_candidates(candidates)
+    if parsed.week_start:
+        week = parse_week_start(parsed.week_start)
+    elif parsed.week_end:
+        week = validate_week_end(parse_week_end(parsed.week_end), raw, rows_for_bounds)
+    else:
+        week = latest_available_week(raw, rows_for_bounds)
     lookup = load_agent_lookup(Path(lookup_value))
     cache = Path(
         os.environ.get("NEXTIVA_HOLIDAY_CACHE_FILE", "")
@@ -148,6 +166,9 @@ def _run_weekly_report(arguments: list[str]) -> int:
             ),
         )
         rows = load_candidates(candidates)
+    output = parsed.output or Path("reports") / (
+        f"Nextiva_Weekly_{week.start.isoformat()}_to_{week.end.isoformat()}.pdf"
+    )
     current = summarize_week(
         rows, week, lookup, metadata, membership_hunt_group, "combined", holiday_calendar,
         certification_hunt_group=configured_certification_hunt_group,
