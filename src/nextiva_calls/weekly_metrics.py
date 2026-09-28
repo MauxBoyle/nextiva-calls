@@ -11,6 +11,9 @@ from pathlib import Path
 from statistics import median
 from typing import Literal
 
+from dateutil.parser import ParserError
+from dateutil.parser import parse as parse_datetime
+
 from nextiva_calls.holiday_calendar import Holiday, HolidayCalendar
 from nextiva_calls.reconstruction import CANDIDATE_COLUMNS
 from nextiva_calls.segments import CENTRAL_TIME, AgentLookup
@@ -259,6 +262,81 @@ def parse_week_start(value: str) -> Week:
     except ValueError as error:
         raise ValueError("--week-start must be a date in YYYY-MM-DD format") from error
     return Week(chosen)
+
+
+def parse_week_end(value: str) -> Week:
+    """Parse an ISO date as the inclusive end of a seven-day period."""
+    try:
+        chosen = date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("--week-end must be a date in YYYY-MM-DD format") from error
+    return Week(chosen - timedelta(days=6))
+
+
+def _raw_timestamp(value: str) -> datetime | None:
+    """Read a Nextiva raw CSV timestamp in Central time."""
+    try:
+        parsed = parse_datetime(value, fuzzy=False)
+    except (ParserError, OverflowError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=CENTRAL_TIME)
+    return parsed.astimezone(CENTRAL_TIME)
+
+
+def available_call_date_bounds(
+    raw_path: Path, candidates: list[dict[str, str]]
+) -> tuple[date, date]:
+    """Return the first and last valid call dates available to a weekly report.
+
+    The raw audit CSV is authoritative whenever it exists.  Candidate-only
+    integrations do not have that file, so their reconstructed timestamps are
+    used instead.
+    """
+    dates: list[date] = []
+    if raw_path.exists():
+        try:
+            with raw_path.open(newline="", encoding="utf-8") as stream:
+                reader = csv.DictReader(stream)
+                if reader.fieldnames is None or "Time of Call" not in reader.fieldnames:
+                    raise StorageError("Raw calls CSV has an unexpected header")
+                dates = [
+                    when.date()
+                    for row in reader
+                    if (when := _raw_timestamp(row.get("Time of Call", ""))) is not None
+                ]
+        except StorageError:
+            raise
+        except (OSError, UnicodeError, csv.Error) as error:
+            raise StorageError("Raw calls CSV could not be read") from error
+    else:
+        dates = [
+            when.date()
+            for row in candidates
+            if (when := _timestamp(row.get("call_timestamp_ct", ""))) is not None
+        ]
+    if not dates:
+        raise ValueError("No valid call timestamps are available for weekly reporting")
+    return min(dates), max(dates)
+
+
+def latest_available_week(raw_path: Path, candidates: list[dict[str, str]]) -> Week:
+    """Return the seven-day period ending on the newest available call date."""
+    _, latest = available_call_date_bounds(raw_path, candidates)
+    return parse_week_end(latest.isoformat())
+
+
+def validate_week_end(
+    week: Week, raw_path: Path, candidates: list[dict[str, str]]
+) -> Week:
+    """Ensure an explicitly chosen inclusive end date occurs in available data."""
+    earliest, latest = available_call_date_bounds(raw_path, candidates)
+    if not earliest <= week.end <= latest:
+        raise ValueError(
+            "--week-end must be within the available data dates "
+            f"({earliest.isoformat()} to {latest.isoformat()})"
+        )
+    return week
 
 
 def load_candidates(path: Path) -> list[dict[str, str]]:
