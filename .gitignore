@@ -62,8 +62,8 @@ cover/
 !docs/candidate-call-validation-checklist-v1.csv
 !config/closure_dates.csv
 data/*
-!data/NextivaCallData.metadata.sqlite3
 reports/
+cron_log.txt
 *.state.json
 *.opm-holidays.ics
 opm_holidays.ics
